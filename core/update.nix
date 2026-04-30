@@ -4,12 +4,12 @@ let
   cfg = config.base.update;
 in {
   options.base.update = {
-    enable = mkEnableOption "系统自动更新与维护服务";
+    enable = mkEnableOption "System automatic update and maintenance service";
 
     type = mkOption {
       type = types.enum [ "flake" "legacy" ];
       default = "flake";
-      description = "更新模式：'flake' 使用 Nix Flakes, 'legacy' 使用传统 NixOS 路径。";
+      description = "Update mode: 'flake' uses Nix Flakes, 'legacy' uses legacy NixOS paths.";
     };
 
     flake = {
@@ -17,7 +17,7 @@ in {
         type = types.str;
         default = "";
         example = "github:owner/repo#host";
-        description = "Flake URI。如果为空且 type 为 'flake'，将使用默认路径。";
+        description = "Flake URI. If empty and type is 'flake', the default path will be used.";
       };
     };
 
@@ -25,27 +25,27 @@ in {
       enable = mkOption {
         type = types.bool;
         default = false;
-        description = "是否启用 Git 同步服务，用于从远程仓库拉取配置到本地路径。";
+        description = "Whether to enable Git sync service for pulling configuration from remote repository to local path.";
       };
       url = mkOption {
         type = types.str;
         default = "";
-        description = "远程 Git 仓库地址。";
+        description = "Remote Git repository URL.";
       };
       branch = mkOption {
         type = types.str;
         default = "main";
-        description = "同步的分支名称。";
+        description = "The name of the branch to sync.";
       };
       targetPath = mkOption {
         type = types.str;
         default = "/etc/nixos";
-        description = "同步到本地的绝对路径。";
+        description = "Absolute path to sync to locally.";
       };
       interval = mkOption {
         type = types.str;
         default = "hourly";
-        description = "同步频率 (systemd OnCalendar 格式)。";
+        description = "Sync frequency (systemd OnCalendar format).";
       };
     };
 
@@ -53,22 +53,22 @@ in {
       enable = mkOption {
         type = types.bool;
         default = true;
-        description = "是否启用自动升级 (nixos-rebuild)。";
+        description = "Whether to enable automatic upgrades (nixos-rebuild).";
       };
       dates = mkOption {
         type = types.str;
         default = "04:00";
-        description = "执行自动升级的时间点。";
+        description = "The time at which automatic upgrades are performed.";
       };
       randomizedDelaySec = mkOption {
         type = types.str;
         default = "1h";
-        description = "随机延迟升级的时间，避免大量机器同时更新。";
+        description = "Random delay time for upgrades to avoid many machines updating at the same time.";
       };
       allowReboot = mkOption {
         type = types.bool;
         default = false;
-        description = "升级后如果内核变更是否允许自动重启。";
+        description = "Whether to allow automatic reboot if the kernel changes after upgrade.";
       };
     };
 
@@ -76,17 +76,17 @@ in {
       enable = mkOption {
         type = types.bool;
         default = true;
-        description = "是否启用 Nix 垃圾回收。";
+        description = "Whether to enable Nix garbage collection.";
       };
       dates = mkOption {
         type = types.str;
         default = "weekly";
-        description = "执行垃圾回收的频率。";
+        description = "Frequency of garbage collection.";
       };
       olderThan = mkOption {
         type = types.str;
         default = "7d";
-        description = "删除早于此天数的生成版本 (generations)。";
+        description = "Delete generations older than this number of days.";
       };
     };
   };
@@ -100,12 +100,12 @@ in {
       path = [ pkgs.git pkgs.coreutils ];
       script = ''
         if [ ! -d "${cfg.git.targetPath}/.git" ]; then
-          echo "初始化克隆仓库: ${cfg.git.url} -> ${cfg.git.targetPath}"
+          echo "Initializing clone repository: ${cfg.git.url} -> ${cfg.git.targetPath}"
           mkdir -p "$(dirname "${cfg.git.targetPath}")"
           git clone "${cfg.git.url}" "${cfg.git.targetPath}"
         fi
         cd "${cfg.git.targetPath}"
-        echo "正在同步分支 ${cfg.git.branch}..."
+        echo "Syncing branch ${cfg.git.branch}..."
         git fetch origin
         git reset --hard "origin/${cfg.git.branch}"
         git clean -fd
