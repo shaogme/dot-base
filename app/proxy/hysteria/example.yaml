@@ -1,0 +1,179 @@
+# example:
+#   type: a
+#   a:
+#     something: something
+#   b:
+#     something: something
+#   c:
+#     something: something
+# type 用于确定使用哪种模式以及解析哪些子字段。在这个例子中，example 字段可以是 a、b 或 c。如果选择了 a，则会解析 a 子字段，而 b 和 c 子字段则会被忽略。
+
+listen: :443 
+# listen 是服务器的监听地址。如果省略，服务器将默认监听 :443 端口，这是 HTTP/3 的默认端口。
+
+tls: 
+  cert: some.crt
+  key: some.key
+  sniGuard: strict | disable | dns-san 
+  clientCA: client.crt 
+# sniGuard 用于
+# 验证客户端发送的 SNI。 与证书信息匹配时才建立连接， 否则终止 TLS 握手。
+# 设置为 strict 以启用该功能。
+# 设置为 disable 以禁用该功能。
+# 默认为 dns-san， 仅当证书中包含「证书主题背景的备用名称」扩展且该扩展中包含域名时才启用该功能。
+# clientCA 用于指定客户端 CA 证书，用于验证客户端证书。
+
+# 与acme仅能同时存在一个
+
+acme:
+  domains:
+    - domain1.com
+    - domain2.org
+  email: your@email.net
+  ca: zerossl 
+  listenHost: 0.0.0.0 
+  dir: my_acme_dir 
+  type: http | tls | dns 
+  http:
+    altPort: 8888 
+  tls:
+    altPort: 44333 
+  dns:
+    name: gomommy 
+    config:
+      key1: value1
+      key2: value2
+
+obfs:
+  type: salamander 
+  salamander:
+    password: cry_me_a_r1ver 
+# obfs 用于配置混淆设置。
+# 默认 Hysteria 协议伪装为 HTTP/3。如果你的网络针对性屏蔽了 QUIC 或 HTTP/3 流量（但允许其他 UDP 流量），可以使用混淆来解决此问题。目前有一个名为 "Salamander" 的混淆实现，将数据包混淆成没有特征的 UDP 包。此功能需要一个混淆密码，密码在客户端和服务端必须相同。
+
+quic:
+  initStreamReceiveWindow: 8388608 
+  maxStreamReceiveWindow: 8388608 
+  initConnReceiveWindow: 20971520 
+  maxConnReceiveWindow: 20971520 
+  maxIdleTimeout: 30s 
+  maxIncomingStreams: 1024 
+  disablePathMTUDiscovery: false 
+
+bandwidth:
+  up: 1 gbps
+  down: 1 gbps
+# bandwidth 用于配置带宽限制。
+# 支持的单位有：
+#   bps 或 b（每秒比特数）
+#   kbps 或 kb 或 k（每秒千比特）
+#   mbps 或 mb 或 m（每秒兆比特）
+#   gbps 或 gb 或 g（每秒吉比特）
+#   tbps 或 tb 或 t（每秒太比特）
+
+ignoreClientBandwidth: false
+
+speedTest: false
+# speedTest 启用后，服务端将允许客户端进行下载和上传速度测试。
+disableUDP: false
+# disableUDP 启用后服务端禁用 UDP 转发，只支持 TCP。
+udpIdleTimeout: 60s
+# udpIdleTimeout 用于指定服务器对于每个 UDP 会话，在没有流量时保持本地 UDP 端口的时间长度。概念上与 NAT 的 UDP 会话超时时间相似。
+
+auth:
+  type: password | userpass | http | command 
+  password: your_password 
+  userpass: 
+    user1: pass1
+    user2: pass2
+    user3: pass3
+  http:
+    url: http://your.backend.com/auth
+    insecure: false 
+  command: /etc/some_command 
+
+resolver:
+  type: udp | tcp | tls | https 
+  tcp:
+    addr: 8.8.8.8:53 
+    timeout: 4s 
+  udp:
+    addr: 8.8.4.4:53 
+    timeout: 4s
+  tls:
+    addr: 1.1.1.1:853 
+    timeout: 10s
+    sni: cloudflare-dns.com
+    insecure: false 
+  https:
+    addr: 1.1.1.1:443
+    timeout: 10s
+    sni: cloudflare-dns.com
+    insecure: false
+
+sniff:
+  enable: true 
+  timeout: 2s 
+  rewriteDomain: false 
+  tcpPorts: 80,443,8000-9000
+  udpPorts: all
+
+acl:
+  file: some.txt 
+  # geoip: geoip.dat 
+  # geosite: geosite.dat 
+  # geoUpdateInterval: 168h
+
+outbounds:
+  - name: my_outbound_1 
+    type: direct 
+  - name: my_outbound_2
+    type: socks5
+    socks5:
+      addr: shady.proxy.ru:1080
+      username: hackerman
+      password: Elliot Alderson 
+  - name: my_outbound_3
+    type: http
+    http:
+      url: http://username:password@sketchy-proxy.cc:8081
+      insecure: false
+
+# 关于 direct 出站
+# outbounds:
+#   - name: hoho
+#     type: direct
+#     direct:
+#       mode: auto 
+#       bindIPv4: 2.4.6.8 
+#       bindIPv6: 0:0:0:0:0:ffff:0204:0608 
+#       bindDevice: eth233 
+#       fastOpen: false 
+
+trafficStats:
+  listen: :9999 
+  secret: some_secret 
+# 流量统计 API 允许你通过 HTTP API 查询服务器的流量统计信息，以及踢用户下线。
+
+masquerade:
+  type: file | proxy | string 
+
+  file:
+    dir: /www/masq 
+  proxy:
+    url: https://some.site.net 
+    rewriteHost: true
+    insecure: false 
+  string:
+    content: hello stupid world 
+    headers: 
+      content-type: text/plain
+      custom-stuff: ice cream so good
+    statusCode: 200   
+
+# 通常支持 HTTP/3 的网站只是将其作为一个升级选项，在 80/443 端口上也提供 TCP 的 HTTP/HTTPS。如果希望模仿这种模式，可以使用 listenHTTP 和 listenHTTPS 选项来启用 HTTP/HTTPS 伪装。这种情况下，不需要用上述特殊参数启动 Chrome，和普通的网站一样访问即可验证伪装。
+# masquerade:
+#   ... (上述其他字段)
+#   listenHTTP: :80 
+#   listenHTTPS: :443
+#   forceHTTPS: true 
