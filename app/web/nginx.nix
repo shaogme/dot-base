@@ -53,7 +53,7 @@ in {
     
     email = mkOption {
       type = types.str;
-      default = "shaog@duck.com";
+      description = "Email address for ACME registration and renewal notifications";
     };
 
     sites = mkOption {
