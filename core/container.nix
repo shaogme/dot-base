@@ -3,6 +3,12 @@ with lib;
 let
   cfg = config.base.container;
 in {
+  options.base.containerBackend = mkOption {
+    type = types.enum [ "docker" "podman" ];
+    default = "podman";
+    description = "Default container backend to use for all modules";
+  };
+
   options.base.container = {
     docker = {
       enable = mkEnableOption "Docker container engine";

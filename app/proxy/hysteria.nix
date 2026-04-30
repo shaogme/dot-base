@@ -465,7 +465,7 @@ in {
 
     backend = mkOption {
       type = types.enum [ "docker" "podman" ];
-      default = "docker";
+      default = config.base.containerBackend;
       description = "The container backend to use.";
     };
     
