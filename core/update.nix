@@ -6,26 +6,17 @@ in {
   options.base.update = {
     enable = mkEnableOption "System automatic update and maintenance service";
 
-    type = mkOption {
-      type = types.enum [ "flake" "legacy" ];
-      default = "flake";
-      description = "Update mode: 'flake' uses Nix Flakes, 'legacy' uses legacy NixOS paths.";
+    host = mkOption {
+      type = types.str;
+      default = config.networking.hostName;
+      description = "The hostname used for Flake builds (#hostname). Defaults to system hostname.";
     };
 
-    flake = {
-      uri = mkOption {
-        type = types.str;
-        default = "";
-        example = "github:owner/repo#host";
-        description = "Flake URI. If empty and type is 'flake', the default path will be used.";
-      };
-    };
-
-    git = {
+    sync = {
       enable = mkOption {
         type = types.bool;
         default = false;
-        description = "Whether to enable Git sync service for pulling configuration from remote repository to local path.";
+        description = "Whether to enable Git sync service for pulling configuration from remote repository.";
       };
       url = mkOption {
         type = types.str;
@@ -42,6 +33,11 @@ in {
         default = "/etc/nixos";
         description = "Absolute path to sync to locally.";
       };
+      destructive = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Whether to allow destructive modifications (git reset --hard and git clean).";
+      };
       interval = mkOption {
         type = types.str;
         default = "hourly";
@@ -49,11 +45,21 @@ in {
       };
     };
 
-    autoUpgrade = {
+    upgrade = {
       enable = mkOption {
         type = types.bool;
         default = true;
         description = "Whether to enable automatic upgrades (nixos-rebuild).";
+      };
+      type = mkOption {
+        type = types.enum [ "flake" "legacy" ];
+        default = "flake";
+        description = "Upgrade mode: 'flake' uses Nix Flakes, 'legacy' uses legacy NixOS paths.";
+      };
+      flakeUri = mkOption {
+        type = types.str;
+        default = "";
+        description = "Manual Flake URI. If sync.enable is true, this is automatically inferred from sync.targetPath.";
       };
       dates = mkOption {
         type = types.str;
@@ -93,22 +99,30 @@ in {
 
   config = mkIf cfg.enable {
     # --- Git 同步服务 ---
-    systemd.services.sync-config = mkIf cfg.git.enable {
+    systemd.services.sync-config = mkIf cfg.sync.enable {
       description = "Sync NixOS configuration from Git";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       path = [ pkgs.git pkgs.coreutils ];
       script = ''
-        if [ ! -d "${cfg.git.targetPath}/.git" ]; then
-          echo "Initializing clone repository: ${cfg.git.url} -> ${cfg.git.targetPath}"
-          mkdir -p "$(dirname "${cfg.git.targetPath}")"
-          git clone "${cfg.git.url}" "${cfg.git.targetPath}"
+        if [ ! -d "${cfg.sync.targetPath}/.git" ]; then
+          echo "Initializing clone repository: ${cfg.sync.url} -> ${cfg.sync.targetPath}"
+          mkdir -p "$(dirname "${cfg.sync.targetPath}")"
+          git clone "${cfg.sync.url}" "${cfg.sync.targetPath}"
         fi
-        cd "${cfg.git.targetPath}"
-        echo "Syncing branch ${cfg.git.branch}..."
-        git fetch origin
-        git reset --hard "origin/${cfg.git.branch}"
-        git clean -fd
+        
+        cd "${cfg.sync.targetPath}"
+        echo "Syncing branch ${cfg.sync.branch}..."
+        
+        if [ "${if cfg.sync.destructive then "1" else "0"}" = "1" ]; then
+          echo "Performing destructive sync (hard reset)..."
+          git fetch origin
+          git reset --hard "origin/${cfg.sync.branch}"
+          git clean -fd
+        else
+          echo "Performing non-destructive sync (pull)..."
+          git pull origin "${cfg.sync.branch}"
+        fi
       '';
       serviceConfig = {
         Type = "oneshot";
@@ -116,25 +130,30 @@ in {
       };
     };
 
-    systemd.timers.sync-config = mkIf cfg.git.enable {
+    systemd.timers.sync-config = mkIf cfg.sync.enable {
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = cfg.git.interval;
+        OnCalendar = cfg.sync.interval;
         RandomizedDelaySec = "5min";
       };
     };
 
     # --- 自动升级配置 ---
-    system.autoUpgrade = mkIf cfg.autoUpgrade.enable {
+    system.autoUpgrade = mkIf cfg.upgrade.enable {
       enable = true;
-      dates = cfg.autoUpgrade.dates;
-      randomizedDelaySec = cfg.autoUpgrade.randomizedDelaySec;
-      allowReboot = cfg.autoUpgrade.allowReboot;
-      
-      flake = mkIf (cfg.type == "flake" && cfg.flake.uri != "") cfg.flake.uri;
-      
-      flags = mkIf (cfg.type == "legacy") [
-        "-I" "nixos-config=${cfg.git.targetPath}/configuration.nix"
+      dates = cfg.upgrade.dates;
+      randomizedDelaySec = cfg.upgrade.randomizedDelaySec;
+      allowReboot = cfg.upgrade.allowReboot;
+
+      flake = mkIf (cfg.upgrade.type == "flake") (
+        let
+          baseUri = if cfg.sync.enable then "path:${cfg.sync.targetPath}" else cfg.upgrade.flakeUri;
+          hostSuffix = if cfg.host != "" then "#${cfg.host}" else "";
+        in mkIf (baseUri != "") "${baseUri}${hostSuffix}"
+      );
+
+      flags = mkIf (cfg.upgrade.type == "legacy") [
+        "-I" "nixos-config=${cfg.sync.targetPath}/configuration.nix"
       ];
     };
 
@@ -145,7 +164,7 @@ in {
       options = "--delete-older-than ${cfg.gc.olderThan}";
     };
 
-    # 进一步优化：如果启用了 GC，通常也希望启用 store 优化
+    # 如果启用了 GC，默认启用 store 优化
     nix.settings.auto-optimise-store = mkDefault true;
   };
 }
