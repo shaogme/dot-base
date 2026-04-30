@@ -1,15 +1,15 @@
 { config, pkgs, lib, ... }:
 with lib;
 let
-  cfg = config.base.app.web.alist;
+  cfg = config.base.app.web.openlist;
 in {
-  options.base.app.web.alist = {
-    enable = mkEnableOption "Alist File Listing";
+  options.base.app.web.openlist = {
+    enable = mkEnableOption "OpenList File Listing";
     
     domain = mkOption {
       type = types.nullOr types.str;
       default = null;
-      description = "Domain name for Alist (enables Nginx integration)";
+      description = "Domain name for OpenList (enables Nginx integration)";
     };
 
     backend = mkOption {
@@ -30,20 +30,19 @@ in {
     networking.firewall.allowedTCPPorts = mkIf (cfg.domain == null) [ 5244 ];
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/alist 0755 root root -"
+      "d /var/lib/openlist 0755 root root -"
     ];
 
     virtualisation.oci-containers = {
       backend = cfg.backend;
-      containers.alist = {
-        image = "xhofe/alist:beta";
+      containers.openlist = {
+        image = "openlistteam/openlist:latest";
         ports = [ "5244:5244" ];
         volumes = [
-          "/var/lib/alist:/opt/alist/data"
+          "/var/lib/openlist:/opt/openlist/data"
         ];
+        user = "0:0";
         environment = {
-          PUID = "0";
-          PGID = "0";
           UMASK = "022";
         };
         autoStart = true;
@@ -51,8 +50,6 @@ in {
     };
 
     # 使用新的 sites 抽象层
-    # 这里不需要指定 SSL 证书路径或 enableACME，nginx.nix 会自动处理
-    # 也不需要再手动允许 UDP 443 端口，nginx.nix 会自动处理
     base.app.web.nginx.sites = mkIf (cfg.domain != null) {
       "${cfg.domain}" = {
         # 启用 HTTP3 和 QUIC
