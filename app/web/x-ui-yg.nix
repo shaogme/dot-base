@@ -51,67 +51,73 @@ in {
     };
   };
 
-  config = mkIf (cfg.enable && !config.base.testMode) {
-    # Ensure backend is enabled
-    base.container.${cfg.backend}.enable = true;
-    
-    # Ensure Nginx is enabled if domain is set
-    base.app.web.nginx.enable = mkIf (cfg.domain != null) true;
+  config = mkIf cfg.enable (mkMerge [
+    # --- Always enabled logic (including Nginx sites) ---
+    {
+      # Ensure Nginx core is enabled if domain is set
+      base.app.web.nginx.enable = mkIf (cfg.domain != null) true;
 
-    networking.firewall = {
-      allowedTCPPorts = mkIf (cfg.domain == null) [ 54321 ];
-      # [修改] 使用配置的端口范围
-      allowedTCPPortRanges = [
-        { from = cfg.proxyPorts.start; to = cfg.proxyPorts.end; }
-      ];
-      allowedUDPPortRanges = [
-        { from = cfg.proxyPorts.start; to = cfg.proxyPorts.end; }
-      ];
-    };
-
-    systemd.tmpfiles.rules = [
-      "d /var/lib/x-ui-yg 0755 root root -"
-      "d /var/lib/x-ui-yg/cert 0755 root root -"
-    ];
-
-    virtualisation.oci-containers = {
-      backend = cfg.backend;
-      containers.x-ui-yg = {
-        image = "ghcr.io/shaogme/x-ui-yg-docker:alpine";
-        # 使用 host 网络模式
-        extraOptions = [
-          "--network=host"
-          "--tty"
-          "--memory=512m"
-        ];
-        volumes = [
-          "/var/lib/x-ui-yg:/usr/local/x-ui"
-          "/var/lib/x-ui-yg/cert:/root/cert"
-        ];
-        environment = {
-          TZ = "Asia/Shanghai";
-          XUI_USER = cfg.username;
-          XUI_PASS = cfg.password;
-          XUI_PORT = "54321";
-        };
-        autoStart = true;
-      };
-    };
-
-    # 使用新的 sites 抽象层
-    base.app.web.nginx.sites = mkIf (cfg.domain != null) {
-      "${cfg.domain}" = {
-        http3 = true;
-        quic = true;
-        
-        locations."/" = {
-          proxyPass = "http://127.0.0.1:54321";
-          proxyWebsockets = true;
-          extraConfig = ''
-            client_max_body_size 0;
-          '';
+      # 使用新的 sites 抽象层
+      base.app.web.nginx.sites = mkIf (cfg.domain != null) {
+        "${cfg.domain}" = {
+          http3 = true;
+          quic = true;
+          
+          locations."/" = {
+            proxyPass = "http://127.0.0.1:54321";
+            proxyWebsockets = true;
+            extraConfig = ''
+              client_max_body_size 0;
+            '';
+          };
         };
       };
-    };
-  };
+    }
+
+    # --- Logic disabled in testMode ---
+    (mkIf (!config.base.testMode) {
+      # Ensure backend is enabled
+      base.container.${cfg.backend}.enable = true;
+      
+      networking.firewall = {
+        allowedTCPPorts = mkIf (cfg.domain == null) [ 54321 ];
+        # [修改] 使用配置的端口范围
+        allowedTCPPortRanges = [
+          { from = cfg.proxyPorts.start; to = cfg.proxyPorts.end; }
+        ];
+        allowedUDPPortRanges = [
+          { from = cfg.proxyPorts.start; to = cfg.proxyPorts.end; }
+        ];
+      };
+
+      systemd.tmpfiles.rules = [
+        "d /var/lib/x-ui-yg 0755 root root -"
+        "d /var/lib/x-ui-yg/cert 0755 root root -"
+      ];
+
+      virtualisation.oci-containers = {
+        backend = cfg.backend;
+        containers.x-ui-yg = {
+          image = "ghcr.io/shaogme/x-ui-yg-docker:alpine";
+          # 使用 host 网络模式
+          extraOptions = [
+            "--network=host"
+            "--tty"
+            "--memory=512m"
+          ];
+          volumes = [
+            "/var/lib/x-ui-yg:/usr/local/x-ui"
+            "/var/lib/x-ui-yg/cert:/root/cert"
+          ];
+          environment = {
+            TZ = "Asia/Shanghai";
+            XUI_USER = cfg.username;
+            XUI_PASS = cfg.password;
+            XUI_PORT = "54321";
+          };
+          autoStart = true;
+        };
+      };
+    })
+  ]);
 }

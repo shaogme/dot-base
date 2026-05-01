@@ -25,51 +25,57 @@ in {
     };
   };
 
-  config = mkIf (cfg.enable && !config.base.testMode) {
-    # Ensure backend is enabled
-    base.container.${cfg.backend}.enable = true;
-    
-    # Ensure Nginx core is enabled if domain is set
-    base.app.web.nginx.enable = mkIf (cfg.domain != null) true;
+  config = mkIf cfg.enable (mkMerge [
+    # --- Always enabled logic (including Nginx sites) ---
+    {
+      # Ensure Nginx core is enabled if domain is set
+      base.app.web.nginx.enable = mkIf (cfg.domain != null) true;
 
-    # 如果没有配置域名，则开放端口直接访问
-    networking.firewall.allowedTCPPorts = mkIf (cfg.domain == null) [ cfg.port ];
-
-    systemd.tmpfiles.rules = [
-      "d /var/lib/vaultwarden 0755 root root -"
-    ];
-
-    virtualisation.oci-containers = {
-      backend = cfg.backend;
-      containers.vaultwarden = {
-        image = "vaultwarden/server:latest";
-        ports = if (cfg.domain != null) 
-                then [ "127.0.0.1:${toString cfg.port}:80" ]
-                else [ "${toString cfg.port}:80" ];
-        volumes = [
-          "/var/lib/vaultwarden:/data"
-        ];
-        environment = mkIf (cfg.domain != null) {
-          DOMAIN = "https://${cfg.domain}";
-        };
-        autoStart = true;
-      };
-    };
-
-    # Nginx 反向代理
-    base.app.web.nginx.sites = mkIf (cfg.domain != null) {
-      "${cfg.domain}" = {
-        # 启用 HTTP3 和 QUIC
-        http3 = true;
-        quic = true;
-        
-        locations."/" = {
-          proxyPass = "http://127.0.0.1:${toString cfg.port}";
-          extraConfig = ''
-            client_max_body_size 128M;
-          '';
+      # Nginx 反向代理
+      base.app.web.nginx.sites = mkIf (cfg.domain != null) {
+        "${cfg.domain}" = {
+          # 启用 HTTP3 和 QUIC
+          http3 = true;
+          quic = true;
+          
+          locations."/" = {
+            proxyPass = "http://127.0.0.1:${toString cfg.port}";
+            extraConfig = ''
+              client_max_body_size 128M;
+            '';
+          };
         };
       };
-    };
-  };
+    }
+
+    # --- Logic disabled in testMode ---
+    (mkIf (!config.base.testMode) {
+      # Ensure backend is enabled
+      base.container.${cfg.backend}.enable = true;
+      
+      # 如果没有配置域名，则开放端口直接访问
+      networking.firewall.allowedTCPPorts = mkIf (cfg.domain == null) [ cfg.port ];
+
+      systemd.tmpfiles.rules = [
+        "d /var/lib/vaultwarden 0755 root root -"
+      ];
+
+      virtualisation.oci-containers = {
+        backend = cfg.backend;
+        containers.vaultwarden = {
+          image = "vaultwarden/server:latest";
+          ports = if (cfg.domain != null) 
+                  then [ "127.0.0.1:${toString cfg.port}:80" ]
+                  else [ "${toString cfg.port}:80" ];
+          volumes = [
+            "/var/lib/vaultwarden:/data"
+          ];
+          environment = mkIf (cfg.domain != null) {
+            DOMAIN = "https://${cfg.domain}";
+          };
+          autoStart = true;
+        };
+      };
+    })
+  ]);
 }

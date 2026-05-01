@@ -476,179 +476,182 @@ in {
     };
   };
 
-  # ==========================================
-  # 实现逻辑 (Config)
-  # ==========================================
-  config = mkIf (cfg.enable && !config.base.testMode) {
-    # 1. 自动配置 Nginx 的 site 和 Lego 钩子
-    base.app.web.nginx.enable = mkIf (any (i: i.domain != null) (attrValues cfg.instances)) true;
-    
-    base.app.web.nginx.sites = mkMerge (mapAttrsToList (name: i: 
-      if i.domain != null then {
-        "${i.domain}" = {
-          locations."/" = { return = "404"; };
-          
-          # 核心逻辑：ACME Hook
-          acmePostRun = ''
-            mkdir -p ${i.dataDir}/acme
-            cp fullchain.pem ${i.dataDir}/acme/server.crt
-            cp key.pem ${i.dataDir}/acme/server.key
-            
-            chmod 644 ${i.dataDir}/acme/server.crt
-            chmod 644 ${i.dataDir}/acme/server.key
-          '';
-        };
-      } else {}
-    ) cfg.instances);
-    
-
-    # 2. 权限修复：确保 acme 用户组可以写入 Hysteria 的证书目录
-    systemd.tmpfiles.rules = mkMerge (mapAttrsToList (name: i:
-      if i.domain != null then [
-        "d ${i.dataDir}/acme 0770 root acme -"
-      ] else []
-    ) cfg.instances);
-
-    # 3. 确保所选的容器后端已启用
-    base.container.${cfg.backend}.enable = true;
-
-    # 4. 自动配置防火墙
-    networking.firewall = {
-      allowedTCPPorts = mkMerge (mapAttrsToList (name: i: 
-        if (i.settings.acme != null && (i.settings.acme.type == null || i.settings.acme.type == "http")) 
-        then [ 80 ] else []
-      ) cfg.instances);
+  config = mkIf cfg.enable (mkMerge [
+    # --- Always enabled logic (including Nginx sites) ---
+    {
+      # 1. 自动配置 Nginx 的 site 和 Lego 钩子
+      base.app.web.nginx.enable = mkIf (any (i: i.domain != null) (attrValues cfg.instances)) true;
       
-      allowedUDPPorts = mapAttrsToList (name: i: 
-        let
-          portStr = last (splitString ":" i.settings.listen);
-        in toInt portStr
-      ) cfg.instances;
-      
-      allowedUDPPortRanges = mkMerge (mapAttrsToList (name: i:
-        if i.portHopping.enable then let
-          parts = splitString "-" i.portHopping.range;
-          from = toInt (head parts);
-          to = toInt (last parts);
-        in [ { inherit from to; } ] else []
-      ) cfg.instances);
-    };
-
-    # 5. 创建 Systemd 服务来管理 Docker Compose
-    systemd.services = mkMerge (mapAttrsToList (name: i: 
-      let
-         # 生成实例配置文件
-         instanceConfig = mkHysteriaConfigRaw i;
-         
-         configFile = pkgs.runCommand "hysteria-${name}.yaml" {
-           nativeBuildInputs = [ pkgs.yq-go ];
-           value = builtins.toJSON instanceConfig;
-           passAsFile = [ "value" ];
-         } ''
-           yq -P '.' "$valuePath" > $out
-         '';
-
-         # 生成 Compose 文件
-         composeConfig = {
-           version = "3.9";
-           services."hysteria-${name}" = {
-             image = i.image;
-             container_name = "hysteria-${name}";
-             restart = "always";
-             network_mode = "host";
-             cap_add = [ "NET_ADMIN" ];
-             volumes = [
-               "${i.dataDir}/acme:/acme"
-               "/run/hysteria/${name}/config.yaml:/etc/hysteria.yaml"
-             ];
-             command = [ "server" "-c" "/etc/hysteria.yaml" ];
-           };
-         };
-         
-         composeFile = yamlFormat.generate "docker-compose-${name}.yaml" composeConfig;
-
-         composeBin = if cfg.backend == "docker" 
-            then "${pkgs.docker-compose}/bin/docker-compose" 
-            else "${pkgs.podman-compose}/bin/podman-compose";
-
-         obfsPlaceholder = "__OBFS_PASSWORD_PLACEHOLDER__";
-         authPlaceholder = "__AUTH_PASSWORD_PLACEHOLDER__";
-         
-         runtimeConfig = "/run/hysteria/${name}/config.yaml";
-         obfsFile = "${i.dataDir}/obfs_password";
-         authFile = "${i.dataDir}/auth_password";
-
-      in {
-        "hysteria-${name}" = {
-          description = "Hysteria Server - ${name} (${cfg.backend} compose)";
-          path = if cfg.backend == "docker" then [ pkgs.docker ] else [ pkgs.podman ];
-          wantedBy = [ "multi-user.target" ];
-          after = [ "network-online.target" ] ++ lib.optional (cfg.backend == "docker") "docker.service";
-          requires = lib.optional (cfg.backend == "docker") "docker.service";
-          
-          script = ''
-            mkdir -p ${i.dataDir}/acme
-            WORK_DIR=/run/hysteria/${name}
-            mkdir -p $WORK_DIR
-            cp ${configFile} ${runtimeConfig}
-
-            ${optionalString (i.domain != null) ''
-            # Try to copy certs from system ACME store if they exist
-            if [ -d "/var/lib/acme/${i.domain}" ]; then
-                echo "Copying certificates from /var/lib/acme/${i.domain}..."
-                cp -L /var/lib/acme/${i.domain}/fullchain.pem ${i.dataDir}/acme/server.crt || true
-                cp -L /var/lib/acme/${i.domain}/key.pem ${i.dataDir}/acme/server.key || true
-                chmod 644 ${i.dataDir}/acme/server.crt
-                chmod 644 ${i.dataDir}/acme/server.key
-            fi
-            ''}
-
-            handle_secret() {
-              local ph=$1; local file=$2
-              if grep -q "$ph" ${runtimeConfig}; then
-                if [ ! -f "$file" ]; then
-                  echo "Generating new secret for $ph..."
-                  ${pkgs.openssl}/bin/openssl rand -hex 16 > "$file"
-                fi
-                SECRET=$(cat "$file")
-                sed -i "s|$ph|$SECRET|g" ${runtimeConfig}
-              fi
-            }
-
-            handle_secret "${obfsPlaceholder}" "${obfsFile}"
-            handle_secret "${authPlaceholder}" "${authFile}"
+      base.app.web.nginx.sites = mkMerge (mapAttrsToList (name: i: 
+        if i.domain != null then {
+          "${i.domain}" = {
+            locations."/" = { return = "404"; };
             
-            ln -sf ${composeFile} $WORK_DIR/docker-compose.yaml
-            ${composeBin} -f $WORK_DIR/docker-compose.yaml -p hysteria-${name} up --remove-orphans
-          '';
-
-          preStop = ''
-            WORK_DIR=/run/hysteria/${name}
-            ${composeBin} -f $WORK_DIR/docker-compose.yaml -p hysteria-${name} down
-          '';
-          
-          serviceConfig = {
-            Restart = "always";
-            RestartSec = "5s";
+            # 核心逻辑：ACME Hook
+            # 在 testMode 下虽然不申请证书，但保留 Hook 配置以保持结构一致
+            acmePostRun = mkIf (!config.base.testMode) ''
+              mkdir -p ${i.dataDir}/acme
+              cp fullchain.pem ${i.dataDir}/acme/server.crt
+              cp key.pem ${i.dataDir}/acme/server.key
+              
+              chmod 644 ${i.dataDir}/acme/server.crt
+              chmod 644 ${i.dataDir}/acme/server.key
+            '';
           };
-        };
-      }
-    ) cfg.instances);
+        } else {}
+      ) cfg.instances);
+    }
 
-    networking.nftables.tables = mkMerge (mapAttrsToList (name: i:
-      if i.portHopping.enable then {
-        "hysteria_${name}_porthopping" = {
-          family = "inet";
-          content = let
-            port = last (splitString ":" i.settings.listen);
-          in ''
-            chain prerouting {
-              type nat hook prerouting priority dstnat; policy accept;
-              iifname "${i.portHopping.interface}" udp dport ${i.portHopping.range} counter redirect to :${port}
-            }
-          '';
-        };
-      } else {}
-    ) cfg.instances);
-  };
+    # --- Logic disabled in testMode ---
+    (mkIf (!config.base.testMode) {
+      # 2. 权限修复：确保 acme 用户组可以写入 Hysteria 的证书目录
+      systemd.tmpfiles.rules = mkMerge (mapAttrsToList (name: i:
+        if i.domain != null then [
+          "d ${i.dataDir}/acme 0770 root acme -"
+        ] else []
+      ) cfg.instances);
+
+      # 3. 确保所选的容器后端已启用
+      base.container.${cfg.backend}.enable = true;
+
+      # 4. 自动配置防火墙
+      networking.firewall = {
+        allowedTCPPorts = mkMerge (mapAttrsToList (name: i: 
+          if (i.settings.acme != null && (i.settings.acme.type == null || i.settings.acme.type == "http")) 
+          then [ 80 ] else []
+        ) cfg.instances);
+        
+        allowedUDPPorts = mapAttrsToList (name: i: 
+          let
+            portStr = last (splitString ":" i.settings.listen);
+          in toInt portStr
+        ) cfg.instances;
+        
+        allowedUDPPortRanges = mkMerge (mapAttrsToList (name: i:
+          if i.portHopping.enable then let
+            parts = splitString "-" i.portHopping.range;
+            from = toInt (head parts);
+            to = toInt (last parts);
+          in [ { inherit from to; } ] else []
+        ) cfg.instances);
+      };
+
+      # 5. 创建 Systemd 服务来管理 Docker Compose
+      systemd.services = mkMerge (mapAttrsToList (name: i: 
+        let
+           # 生成实例配置文件
+           instanceConfig = mkHysteriaConfigRaw i;
+           
+           configFile = pkgs.runCommand "hysteria-${name}.yaml" {
+             nativeBuildInputs = [ pkgs.yq-go ];
+             value = builtins.toJSON instanceConfig;
+             passAsFile = [ "value" ];
+           } ''
+             yq -P '.' "$valuePath" > $out
+           '';
+
+           # 生成 Compose 文件
+           composeConfig = {
+             version = "3.9";
+             services."hysteria-${name}" = {
+               image = i.image;
+               container_name = "hysteria-${name}";
+               restart = "always";
+               network_mode = "host";
+               cap_add = [ "NET_ADMIN" ];
+               volumes = [
+                 "${i.dataDir}/acme:/acme"
+                 "/run/hysteria/${name}/config.yaml:/etc/hysteria.yaml"
+               ];
+               command = [ "server" "-c" "/etc/hysteria.yaml" ];
+             };
+           };
+           
+           composeFile = yamlFormat.generate "docker-compose-${name}.yaml" composeConfig;
+
+           composeBin = if cfg.backend == "docker" 
+              then "${pkgs.docker-compose}/bin/docker-compose" 
+              else "${pkgs.podman-compose}/bin/podman-compose";
+
+           obfsPlaceholder = "__OBFS_PASSWORD_PLACEHOLDER__";
+           authPlaceholder = "__AUTH_PASSWORD_PLACEHOLDER__";
+           
+           runtimeConfig = "/run/hysteria/${name}/config.yaml";
+           obfsFile = "${i.dataDir}/obfs_password";
+           authFile = "${i.dataDir}/auth_password";
+
+        in {
+          "hysteria-${name}" = {
+            description = "Hysteria Server - ${name} (${cfg.backend} compose)";
+            path = if cfg.backend == "docker" then [ pkgs.docker ] else [ pkgs.podman ];
+            wantedBy = [ "multi-user.target" ];
+            after = [ "network-online.target" ] ++ lib.optional (cfg.backend == "docker") "docker.service";
+            requires = lib.optional (cfg.backend == "docker") "docker.service";
+            
+            script = ''
+              mkdir -p ${i.dataDir}/acme
+              WORK_DIR=/run/hysteria/${name}
+              mkdir -p $WORK_DIR
+              cp ${configFile} ${runtimeConfig}
+
+              ${optionalString (i.domain != null) ''
+              # Try to copy certs from system ACME store if they exist
+              if [ -d "/var/lib/acme/${i.domain}" ]; then
+                  echo "Copying certificates from /var/lib/acme/${i.domain}..."
+                  cp -L /var/lib/acme/${i.domain}/fullchain.pem ${i.dataDir}/acme/server.crt || true
+                  cp -L /var/lib/acme/${i.domain}/key.pem ${i.dataDir}/acme/server.key || true
+                  chmod 644 ${i.dataDir}/acme/server.crt
+                  chmod 644 ${i.dataDir}/acme/server.key
+              fi
+              ''}
+
+              handle_secret() {
+                local ph=$1; local file=$2
+                if grep -q "$ph" ${runtimeConfig}; then
+                  if [ ! -f "$file" ]; then
+                    echo "Generating new secret for $ph..."
+                    ${pkgs.openssl}/bin/openssl rand -hex 16 > "$file"
+                  fi
+                  SECRET=$(cat "$file")
+                  sed -i "s|$ph|$SECRET|g" ${runtimeConfig}
+                fi
+              }
+
+              handle_secret "${obfsPlaceholder}" "${obfsFile}"
+              handle_secret "${authPlaceholder}" "${authFile}"
+              
+              ln -sf ${composeFile} $WORK_DIR/docker-compose.yaml
+              ${composeBin} -f $WORK_DIR/docker-compose.yaml -p hysteria-${name} up --remove-orphans
+            '';
+
+            preStop = ''
+              WORK_DIR=/run/hysteria/${name}
+              ${composeBin} -f $WORK_DIR/docker-compose.yaml -p hysteria-${name} down
+            '';
+            
+            serviceConfig = {
+              Restart = "always";
+              RestartSec = "5s";
+            };
+          };
+        }
+      ) cfg.instances);
+
+      networking.nftables.tables = mkMerge (mapAttrsToList (name: i:
+        if i.portHopping.enable then {
+          "hysteria_${name}_porthopping" = {
+            family = "inet";
+            content = let
+              port = last (splitString ":" i.settings.listen);
+            in ''
+              chain prerouting {
+                type nat hook prerouting priority dstnat; policy accept;
+                iifname "${i.portHopping.interface}" udp dport ${i.portHopping.range} counter redirect to :${port}
+              }
+            '';
+          };
+        } else {}
+      ) cfg.instances);
+    })
+  ]);
 }
