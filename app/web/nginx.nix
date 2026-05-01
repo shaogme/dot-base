@@ -62,7 +62,7 @@ in {
     };
   };
 
-  config = mkIf (cfg.enable && !config.base.testMode) {
+  config = mkIf cfg.enable {
     # 开放端口
     networking.firewall.allowedTCPPorts = [ 80 443 ];
     networking.firewall.allowedUDPPorts = [ 443 ];
@@ -77,7 +77,7 @@ in {
     # 我们利用 NixOS 的合并特性：
     # - default.nix 会根据 useACMEHost 自动生成一部分基础配置（如 reloadServices）
     # - 我们在这里补充 webroot 和 postRun 钩子
-    security.acme = {
+    security.acme = mkIf (!config.base.testMode) {
       acceptTerms = true;
       defaults = {
         email = cfg.email;
@@ -113,8 +113,9 @@ in {
             # --- 核心修正 ---
             
             # 1. 启用原生 ACME 集成
-            # 这会触发 default.nix 中的逻辑，自动处理 snakeoil 证书和依赖关系
-            useACMEHost = domain;
+            # 这会触发 default.nix 中的 logic，自动处理 snakeoil 证书和依赖关系
+            # 在 testMode 下禁用 ACME
+            useACMEHost = mkIf (!config.base.testMode) domain;
 
             # 2. 移除手动指定的 sslCertificate / sslCertificateKey
             # default.nix 会根据 useACMEHost 自动填充路径
@@ -122,17 +123,20 @@ in {
             # 3. 正确的 SSL 开关逻辑
             # 如果强制 SSL，则 forceSSL=true (会自动生成 80->443 跳转)
             # 如果不强制但支持 SSL，则 addSSL=true
-            forceSSL = siteCfg.enableForceSSL;
-            addSSL = !siteCfg.enableForceSSL;
+            # 在 testMode 下禁用 SSL
+            forceSSL = if config.base.testMode then false else siteCfg.enableForceSSL;
+            addSSL = if config.base.testMode then false else !siteCfg.enableForceSSL;
 
             # 4. 传递 HTTP3/QUIC 参数
-            http3 = siteCfg.http3;
-            quic = siteCfg.quic;
+            # 在 testMode 下禁用 HTTP3/QUIC
+            http3 = if config.base.testMode then false else siteCfg.http3;
+            quic = if config.base.testMode then false else siteCfg.quic;
             
             # 5. 使用 acmeRoot 参数替代手写的 location
             # default.nix 检测到 useACMEHost + acmeRoot 后，
             # 会自动生成 /.well-known/acme-challenge/ 块，且配置正确
-            acmeRoot = acmeWebRoot;
+            # 在 testMode 下禁用 acmeRoot
+            acmeRoot = mkIf (!config.base.testMode) acmeWebRoot;
 
             # 注入用户定义的 locations
             locations = siteCfg.locations;
