@@ -23,7 +23,7 @@ in {
     };
   };
 
-  config = mkIf (cfg.mode != "none") {
+  config = mkIf (cfg.mode != "none" && !config.base.testMode) {
     # --- Common Configuration ---
     services.resolved.enable = false;
     networking.networkmanager.dns = "none";

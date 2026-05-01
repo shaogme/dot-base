@@ -40,7 +40,7 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf (cfg.enable && !config.base.testMode) {
     networking = {
       nameservers = mkDefault cfg.nameservers;
       networkmanager.enable = false;

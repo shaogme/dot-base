@@ -20,7 +20,7 @@ in {
 
   config = mkMerge [
     # --- Docker Configuration ---
-    (mkIf cfg.docker.enable {
+    (mkIf (cfg.docker.enable && !config.base.testMode) {
       virtualisation.docker = {
         enable = true;
         daemon.settings = {
@@ -42,7 +42,7 @@ in {
     })
 
     # --- Podman Configuration ---
-    (mkIf cfg.podman.enable {
+    (mkIf (cfg.podman.enable && !config.base.testMode) {
       virtualisation.podman = {
         enable = true;
         # Docker 兼容模式 (若 Docker 同时也启用了，则禁用此兼容模式以避免冲突)

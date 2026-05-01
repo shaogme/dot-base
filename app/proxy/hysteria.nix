@@ -479,7 +479,7 @@ in {
   # ==========================================
   # 实现逻辑 (Config)
   # ==========================================
-  config = mkIf cfg.enable {
+  config = mkIf (cfg.enable && !config.base.testMode) {
     # 1. 自动配置 Nginx 的 site 和 Lego 钩子
     base.app.web.nginx.enable = mkIf (any (i: i.domain != null) (attrValues cfg.instances)) true;
     

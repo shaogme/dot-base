@@ -103,7 +103,7 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf (cfg.enable && !config.base.testMode) {
     # --- Git 同步服务 ---
     systemd.services.sync-config = mkIf cfg.sync.enable {
       description = "Sync NixOS configuration from Git";

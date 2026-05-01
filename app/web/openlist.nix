@@ -19,7 +19,7 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf (cfg.enable && !config.base.testMode) {
     # Ensure backend is enabled
     base.container.${cfg.backend}.enable = true;
     

@@ -14,6 +14,7 @@ in {
 
   options.base = {
     enable = mkEnableOption "Base system configuration";
+    testMode = mkEnableOption "Test mode (force shutdown all networked services)";
   };
 
   config = mkIf cfg.enable {
