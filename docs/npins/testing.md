@@ -111,5 +111,5 @@ nix-build tests/vmtest.nix -A driver
 例如，在运行 `vmtest` 时测试本地的 `disko` 修改：
 ```bash
 export NPINS_OVERRIDE_disko=/path/to/local/disko
-nix-build hardware/disk-config/btrfs/tests/default.nix
+nix-build hardware/disk/btrfs/tests/default.nix
 ```

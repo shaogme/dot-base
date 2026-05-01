@@ -12,6 +12,12 @@ in {
       description = "The hostname used for Flake builds (#hostname). Defaults to system hostname.";
     };
 
+    path = mkOption {
+      type = types.str;
+      default = "";
+      description = "The relative path to the configuration within the flake (e.g., 'hosts/myhost'). Defaults to the repository root.";
+    };
+
     sync = {
       enable = mkOption {
         type = types.bool;
@@ -148,12 +154,13 @@ in {
       flake = mkIf (cfg.upgrade.type == "flake") (
         let
           baseUri = if cfg.sync.enable then "path:${cfg.sync.targetPath}" else cfg.upgrade.flakeUri;
+          pathSuffix = if cfg.path != "" then "/${cfg.path}" else "";
           hostSuffix = if cfg.host != "" then "#${cfg.host}" else "";
-        in mkIf (baseUri != "") "${baseUri}${hostSuffix}"
+        in mkIf (baseUri != "") "${baseUri}${pathSuffix}${hostSuffix}"
       );
 
       flags = mkIf (cfg.upgrade.type == "legacy") [
-        "-I" "nixos-config=${cfg.sync.targetPath}/configuration.nix"
+        "-I" "nixos-config=${cfg.sync.targetPath}${if cfg.path != "" then "/${cfg.path}" else ""}/configuration.nix"
       ];
     };
 
