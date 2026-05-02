@@ -18,8 +18,17 @@ in {
   };
 
   config = mkIf cfg.enable {
-    # 启用实验性功能 (nix-command)
-    nix.settings.experimental-features = [ "nix-command" ];
+    # 启用实验性功能 (nix-command, flakes)
+    nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+    # 将 NIX_PATH 中的 nixpkgs 指向当前系统使用的源码路径
+    nix.nixPath = [ "nixpkgs=${pkgs.path}" ];
+
+    # 配置 Nix Registry，使 nix shell 等命令使用相同的源
+    nix.registry.nixpkgs.to = {
+      type = "path";
+      path = pkgs.path;
+    };
     
     # 内核参数 (启用串口终端，通常用于 VPS 调试)
     boot.kernelParams = [ "console=ttyS0,115200n8" "console=tty0" ];
