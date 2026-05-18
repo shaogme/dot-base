@@ -27,7 +27,7 @@ in {
     # 配置 Nix Registry，使 nix shell 等命令使用相同的源
     nix.registry.nixpkgs.to = {
       type = "path";
-      path = pkgs.path;
+      path = builtins.unsafeDiscardStringContext (toString pkgs.path);
     };
     
     # 内核参数 (启用串口终端，通常用于 VPS 调试)
