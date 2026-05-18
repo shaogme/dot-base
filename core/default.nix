@@ -22,12 +22,12 @@ in {
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
     # 将 NIX_PATH 中的 nixpkgs 指向当前系统使用的源码路径
-    nix.nixPath = [ "nixpkgs=${pkgs.path}" ];
+    nix.nixPath = [ "nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixos" ];
 
     # 配置 Nix Registry，使 nix shell 等命令使用相同的源
     nix.registry.nixpkgs.to = {
       type = "path";
-      path = builtins.unsafeDiscardStringContext (toString pkgs.path);
+      path = pkgs.path;
     };
     
     # 内核参数 (启用串口终端，通常用于 VPS 调试)
