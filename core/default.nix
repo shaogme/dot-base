@@ -22,8 +22,8 @@ in {
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
     # 将 NIX_PATH 中的 nixpkgs 指向当前系统使用的源码路径
-    nix.nixPath = [ "nixpkgs=/nix/var/nix/profiles/per-user/root/channels/nixos" ];
-
+    nix.nixPath = [ "nixpkgs=${pkgs.path}" ];
+    
     # 配置 Nix Registry，使 nix shell 等命令使用相同的源
     nix.registry.nixpkgs.to = {
       type = "path";
