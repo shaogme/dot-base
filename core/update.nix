@@ -161,7 +161,7 @@ in {
 
       flags = mkIf (cfg.upgrade.type == "legacy") [
         "-I" "nixos-config=${cfg.sync.targetPath}${if cfg.path != "" then "/${cfg.path}" else ""}/configuration.nix"
-        "-I" "nixpkgs=${pkgs.path}"
+        "-I" "nixpkgs=${builtins.path { name = "nixpkgs"; path = pkgs.path; }}"
       ];
     };
 
