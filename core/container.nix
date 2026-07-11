@@ -12,9 +12,19 @@ in {
   options.base.container = {
     docker = {
       enable = mkEnableOption "Docker container engine";
+      openFirewall = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Open firewall for Docker container interface";
+      };
     };
     podman = {
       enable = mkEnableOption "Podman container engine";
+      openFirewall = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Open firewall for Podman container interfaces";
+      };
     };
   };
 
@@ -39,6 +49,8 @@ in {
       };
 
       users.users.root.extraGroups = [ "docker" ];
+
+      networking.firewall.trustedInterfaces = mkIf cfg.docker.openFirewall [ "docker0" ];
     })
 
     # --- Podman Configuration ---
@@ -54,6 +66,8 @@ in {
       environment.systemPackages = with pkgs; [
         podman-compose
       ];
+
+      networking.firewall.trustedInterfaces = mkIf cfg.podman.openFirewall [ "podman0" "podman1" ];
     })
   ];
 }
