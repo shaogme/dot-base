@@ -1,5 +1,6 @@
 { pkgs, library }:
 let
+  # 1. systemd-networkd 模式评估
   eval = import (pkgs.path + "/nixos/lib/eval-config.nix") {
     modules = [
       { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
@@ -13,6 +14,18 @@ let
           container.docker.enable = true;
           performance.tuning.enable = true;
           update.enable = true;
+          hardware.network = {
+            enable = true;
+            backend = "systemd-networkd";
+            interfaces.eth0 = {
+              dhcp = "yes";
+              macAddress = "52:54:00:12:34:56";
+              mtu = 1500;
+              systemd-networkd.extraLinkConfig = {
+                RequiredForOnline = "no";
+              };
+            };
+          };
         };
         # 最小化配置以满足评估要求
         boot.loader.grub.enable = false;
@@ -21,9 +34,69 @@ let
     ];
   };
   cfg = eval.config;
+
+  # 2. NetworkManager 模式评估
+  evalNm = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          hardware.network = {
+            enable = true;
+            backend = "networkmanager";
+            nameservers = [ "1.1.1.1" "2606:4700:4700::1111" ];
+            interfaces.eth0 = {
+              dhcp = "no";
+              macAddress = "52:54:00:12:34:56";
+              mtu = 1500;
+              ipv4.addresses = [ { address = "192.168.1.100"; prefixLength = 24; } ];
+              ipv4.gateway = "192.168.1.1";
+              ipv4.routes = [ { destination = "10.0.0.0/8"; gateway = "192.168.1.254"; metric = 100; } ];
+              networkmanager.extraProfileConfig = {
+                connection.autoconnect = true;
+              };
+            };
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/".device = "/dev/dummy";
+      }
+    ];
+  };
+  cfgNm = evalNm.config;
+
+  # 3. Scripted 模式评估
+  evalScripted = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          hardware.network = {
+            enable = true;
+            backend = "scripted";
+            interfaces.eth0 = {
+              dhcp = "no";
+              macAddress = "52:54:00:ab:cd:ef";
+              mtu = 1400;
+              ipv4.addresses = [ { address = "10.0.0.2"; prefixLength = 24; } ];
+              ipv4.gateway = "10.0.0.1";
+              ipv4.routes = [ { destination = "172.16.0.0/16"; gateway = "10.0.0.254"; metric = 50; } ];
+            };
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/".device = "/dev/dummy";
+      }
+    ];
+  };
+  cfgScripted = evalScripted.config;
 in
 pkgs.runCommand "static-check" { } ''
-  echo "正在验证基础配置..."
+  echo "正在验证基础配置与网络模块测试覆盖..."
   
   # 1. 验证 SSH 服务
   if [[ "${if cfg.services.openssh.enable then "true" else "false"}" != "true" ]]; then
@@ -93,7 +166,68 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  echo "静态检查通过！"
+  # 9. 验证 systemd-networkd 模式属性
+  if [[ "${if cfg.networking.useNetworkd then "true" else "false"}" != "true" ]]; then
+    echo "错误: systemd-networkd 模式应启用 useNetworkd"
+    exit 1
+  fi
+  if [[ "${cfg.systemd.network.networks.eth0.linkConfig.MACAddress}" != "52:54:00:12:34:56" ]]; then
+    echo "错误: systemd-networkd linkConfig MACAddress 配置未正确应用"
+    exit 1
+  fi
+  if [[ "${cfg.systemd.network.networks.eth0.linkConfig.RequiredForOnline}" != "no" ]]; then
+    echo "错误: systemd-networkd extraLinkConfig 扩展属性未正确合并"
+    exit 1
+  fi
+
+  # 10. 验证 NetworkManager 模式属性与 keyfile 生成
+  if [[ "${if cfgNm.networking.networkmanager.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: networkmanager 模式应启用 NetworkManager 服务"
+    exit 1
+  fi
+  if [[ "${if cfgNm.networking.useNetworkd then "true" else "false"}" == "true" ]]; then
+    echo "错误: networkmanager 模式应禁用 systemd-networkd"
+    exit 1
+  fi
+  if [[ "${cfgNm.networking.networkmanager.ensureProfiles.profiles.eth0.ethernet.cloned-mac-address}" != "52:54:00:12:34:56" ]]; then
+    echo "错误: NetworkManager profile 克隆 MAC 地址配置不符合预期"
+    exit 1
+  fi
+  if [[ "${cfgNm.networking.networkmanager.ensureProfiles.profiles.eth0.ipv4.address1}" != "192.168.1.100/24" ]]; then
+    echo "错误: NetworkManager profile 静态 IP 地址配置不符合预期"
+    exit 1
+  fi
+  if [[ "${cfgNm.networking.networkmanager.ensureProfiles.profiles.eth0.ipv4.gateway}" != "192.168.1.1" ]]; then
+    echo "错误: NetworkManager profile 静态 Gateway 配置不符合预期"
+    exit 1
+  fi
+  if [[ "${cfgNm.networking.networkmanager.ensureProfiles.profiles.eth0.ipv4.route1}" != "10.0.0.0/8,192.168.1.254,100" ]]; then
+    echo "错误: NetworkManager profile 静态 Route 配置不符合预期"
+    exit 1
+  fi
+  if [[ "${if cfgNm.networking.networkmanager.ensureProfiles.profiles.eth0.connection.autoconnect then "true" else "false"}" != "true" ]]; then
+    echo "错误: NetworkManager extraProfileConfig 未能成功合并扩展属性"
+    exit 1
+  fi
+
+  # 11. 验证 Scripted 模式属性
+  if [[ "${if cfgScripted.networking.useNetworkd then "true" else "false"}" == "true" ]]; then
+    echo "错误: scripted 模式应禁用 systemd-networkd"
+    exit 1
+  fi
+  if [[ "${cfgScripted.networking.interfaces.eth0.macAddress}" != "52:54:00:ab:cd:ef" ]]; then
+    echo "错误: scripted 模式 MAC 地址配置不符合预期"
+    exit 1
+  fi
+  if [[ "${toString cfgScripted.networking.interfaces.eth0.mtu}" != "1400" ]]; then
+    echo "错误: scripted 模式 MTU 配置不符合预期"
+    exit 1
+  fi
+  if [[ "${cfgScripted.networking.defaultGateway.address}" != "10.0.0.1" ]]; then
+    echo "错误: scripted 模式 defaultGateway 不符合预期"
+    exit 1
+  fi
+
+  echo "静态测试与多模式网络覆盖检查全部通过！"
   touch $out
 ''
-
