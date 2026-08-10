@@ -5,7 +5,7 @@ let
 in
 {
   imports = [
-    ./network/single-interface.nix
+    ./network
   ];
 
   options.base.hardware = {
