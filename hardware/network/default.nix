@@ -210,33 +210,44 @@ in
       systemd.network = {
         enable = true;
 
-        networks = mapAttrs (ifaceName: ifaceCfg: {
-          matchConfig = {
-            Name = if ifaceCfg.matchName != null then ifaceCfg.matchName else ifaceName;
-          };
+        networks = mapAttrs (ifaceName: ifaceCfg:
+          let
+            defaultRoutes =
+              (optional (ifaceCfg.ipv4.gateway != null) {
+                Gateway = ifaceCfg.ipv4.gateway;
+                GatewayOnLink = true;
+              })
+              ++ (optional (ifaceCfg.ipv6.gateway != null) {
+                Gateway = ifaceCfg.ipv6.gateway;
+                GatewayOnLink = true;
+              });
+          in
+          {
+            matchConfig = {
+              Name = if ifaceCfg.matchName != null then ifaceCfg.matchName else ifaceName;
+            };
 
-          networkConfig = {
-            DHCP = ifaceCfg.dhcp;
-            DNS = cfg.nameservers;
-          } // ifaceCfg.systemd-networkd.extraNetworkConfig;
+            networkConfig = {
+              DHCP = ifaceCfg.dhcp;
+              DNS = cfg.nameservers;
+            } // ifaceCfg.systemd-networkd.extraNetworkConfig;
 
-          linkConfig = { }
-            // optionalAttrs (ifaceCfg.macAddress != null) { MACAddress = ifaceCfg.macAddress; }
-            // optionalAttrs (ifaceCfg.mtu != null) { MTUBytes = toString ifaceCfg.mtu; }
-            // ifaceCfg.systemd-networkd.extraLinkConfig;
+            linkConfig = { }
+              // optionalAttrs (ifaceCfg.macAddress != null) { MACAddress = ifaceCfg.macAddress; }
+              // optionalAttrs (ifaceCfg.mtu != null) { MTUBytes = toString ifaceCfg.mtu; }
+              // ifaceCfg.systemd-networkd.extraLinkConfig;
 
-          address = (map (a: "${a.address}/${toString a.prefixLength}") ifaceCfg.ipv4.addresses)
-            ++ (map (a: "${a.address}/${toString a.prefixLength}") ifaceCfg.ipv6.addresses);
+            address = (map (a: "${a.address}/${toString a.prefixLength}") ifaceCfg.ipv4.addresses)
+              ++ (map (a: "${a.address}/${toString a.prefixLength}") ifaceCfg.ipv6.addresses);
 
-          gateway = filter (g: g != null) [ ifaceCfg.ipv4.gateway ifaceCfg.ipv6.gateway ];
-
-          routes = map (r: {
-            routeConfig = {
-              Destination = r.destination;
-              Gateway = r.gateway;
-            } // (optionalAttrs (r.metric != null) { Metric = r.metric; });
-          }) (ifaceCfg.ipv4.routes ++ ifaceCfg.ipv6.routes);
-        }) cfg.interfaces;
+            routes = defaultRoutes ++ (map (r:
+              {
+                Destination = r.destination;
+                Gateway = r.gateway;
+              } // (optionalAttrs (r.metric != null) { Metric = r.metric; })
+            ) (ifaceCfg.ipv4.routes ++ ifaceCfg.ipv6.routes));
+          }
+        ) cfg.interfaces;
       };
     })
 
