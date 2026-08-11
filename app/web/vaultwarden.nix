@@ -63,7 +63,7 @@ in {
       virtualisation.oci-containers = {
         backend = cfg.backend;
         containers.vaultwarden = {
-          image = "vaultwarden/server:latest";
+          image = "docker.io/vaultwarden/server:latest";
           ports = if (cfg.domain != null) 
                   then [ "127.0.0.1:${toString cfg.port}:80" ]
                   else [ "${toString cfg.port}:80" ];

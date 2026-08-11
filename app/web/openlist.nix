@@ -57,7 +57,7 @@ in {
       virtualisation.oci-containers = {
         backend = cfg.backend;
         containers.openlist = {
-          image = "openlistteam/openlist:latest";
+          image = "docker.io/openlistteam/openlist:latest";
           ports = [ "5244:5244" ];
           volumes = [
             "/var/lib/openlist:/opt/openlist/data"

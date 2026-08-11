@@ -12,7 +12,7 @@
       backend = "podman";
       
       # 镜像设置
-      image = "tobyxdd/hysteria:latest";
+      image = "docker.io/tobyxdd/hysteria:latest";
       
       # 数据持久化目录
       dataDir = "/var/lib/hysteria";

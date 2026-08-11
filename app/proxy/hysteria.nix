@@ -140,7 +140,7 @@ let
 
       image = mkOption {
         type = types.str;
-        default = "tobyxdd/hysteria:latest";
+        default = "docker.io/tobyxdd/hysteria:latest";
         description = "The container image to use.";
       };
 
