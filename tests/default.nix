@@ -15,4 +15,7 @@ in
 
   # 虚拟机运行时测试
   vmtest = import ./vmtest.nix { inherit pkgs library; };
+
+  # Facter 与静态 networkd 配置的运行时回归测试
+  network-vmtest = import ./network-vmtest.nix { inherit pkgs library; };
 }

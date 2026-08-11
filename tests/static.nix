@@ -35,7 +35,41 @@ let
   };
   cfg = eval.config;
 
-  # 2. NetworkManager 模式评估
+  # 2. Static systemd-networkd configuration with a Facter report.
+  evalFacterStatic = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        hardware.facter.report = {
+          hardware.network_interface = [
+            {
+              sub_class.name = "Ethernet";
+              unix_device_names = [ "eth0" ];
+            }
+          ];
+        };
+
+        base = {
+          enable = true;
+          auth.root.authorizedKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... dummy@test" ];
+          hardware.network = {
+            enable = true;
+            interfaces.eth0 = {
+              dhcp = "no";
+              ipv4.addresses = [ { address = "192.0.2.2"; prefixLength = 24; } ];
+              ipv4.gateway = "192.0.2.1";
+            };
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/".device = "/dev/dummy";
+      }
+    ];
+  };
+  cfgFacterStatic = evalFacterStatic.config;
+
+  # 3. NetworkManager 模式评估
   evalNm = import (pkgs.path + "/nixos/lib/eval-config.nix") {
     modules = [
       { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
@@ -67,7 +101,7 @@ let
   };
   cfgNm = evalNm.config;
 
-  # 3. Scripted 模式评估
+  # 4. Scripted 模式评估
   evalScripted = import (pkgs.path + "/nixos/lib/eval-config.nix") {
     modules = [
       { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
@@ -171,16 +205,34 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: systemd-networkd 模式应启用 useNetworkd"
     exit 1
   fi
-  if [[ "${cfg.systemd.network.networks.eth0.linkConfig.MACAddress}" != "52:54:00:12:34:56" ]]; then
+  if [[ "${cfg.systemd.network.networks."10-eth0".linkConfig.MACAddress}" != "52:54:00:12:34:56" ]]; then
     echo "错误: systemd-networkd linkConfig MACAddress 配置未正确应用"
     exit 1
   fi
-  if [[ "${cfg.systemd.network.networks.eth0.linkConfig.RequiredForOnline}" != "no" ]]; then
+  if [[ "${cfg.systemd.network.networks."10-eth0".linkConfig.RequiredForOnline}" != "no" ]]; then
     echo "错误: systemd-networkd extraLinkConfig 扩展属性未正确合并"
     exit 1
   fi
 
-  # 10. 验证 NetworkManager 模式属性与 keyfile 生成
+  # 10. Facter 自动 DHCP 不得覆盖静态 networkd 配置
+  if [[ "${if cfgFacterStatic.hardware.facter.detected.dhcp.enable then "true" else "false"}" != "false" ]]; then
+    echo "错误: 启用统一网络模块时应默认禁用 Facter 自动 DHCP"
+    exit 1
+  fi
+  if [[ "${if cfgFacterStatic.systemd.network.networks ? "40-eth0" then "true" else "false"}" != "false" ]]; then
+    echo "错误: Facter 不应生成竞争的 40-eth0 networkd unit"
+    exit 1
+  fi
+  if [[ "${cfgFacterStatic.systemd.network.networks."10-eth0".networkConfig.DHCP}" != "no" ]]; then
+    echo "错误: 静态 networkd unit 的 DHCP 设置不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "192.0.2.2/24" cfgFacterStatic.systemd.network.networks."10-eth0".address then "true" else "false"}" != "true" ]]; then
+    echo "错误: 静态 networkd unit 未包含 IPv4 地址"
+    exit 1
+  fi
+
+  # 11. 验证 NetworkManager 模式属性与 keyfile 生成
   if [[ "${if cfgNm.networking.networkmanager.enable then "true" else "false"}" != "true" ]]; then
     echo "错误: networkmanager 模式应启用 NetworkManager 服务"
     exit 1
@@ -210,7 +262,7 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 11. 验证 Scripted 模式属性
+  # 12. 验证 Scripted 模式属性
   if [[ "${if cfgScripted.networking.useNetworkd then "true" else "false"}" == "true" ]]; then
     echo "错误: scripted 模式应禁用 systemd-networkd"
     exit 1
