@@ -50,6 +50,10 @@ in {
 
       users.users.root.extraGroups = [ "docker" ];
 
+      environment.systemPackages = with pkgs; [
+        docker-compose
+      ];
+
       networking.firewall.trustedInterfaces = mkIf cfg.docker.openFirewall [ "docker0" ];
     })
 
@@ -65,6 +69,7 @@ in {
 
       environment.systemPackages = with pkgs; [
         podman-compose
+        docker-compose
       ];
 
       networking.firewall.trustedInterfaces = mkIf cfg.podman.openFirewall [ "podman0" "podman1" ];
