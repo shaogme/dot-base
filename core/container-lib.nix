@@ -49,6 +49,7 @@ rec {
     noProxy = mkOption {
       type = types.nullOr types.str;
       default = null;
+      example = "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12";
       description = "NO_PROXY list for ${description} container.";
     };
     autoReplaceLoopback = mkOption {
@@ -111,32 +112,106 @@ rec {
     else {};
 
   # 通用 Backend Option 生成器
-  mkBackendOption = { default ? "podman", description ? "Container backend to use" }:
+  mkBackendOption = { description ? "Container backend to use" }:
     mkOption {
       type = types.enum [ "docker" "podman" ];
-      inherit default description;
+      default = "podman";
+      inherit description;
     };
 
-  # 标准 Web 容器应用模块生成器
+  # 通用端口范围 Option 生成器
+  mkPortRangeOption = {
+    defaultStart ? 10000,
+    defaultEnd ? 10100,
+    description ? "Port range to open in firewall for proxy services",
+  }:
+    mkOption {
+      inherit description;
+      default = { start = defaultStart; end = defaultEnd; };
+      type = types.submodule {
+        options = {
+          start = mkOption {
+            type = types.int;
+            default = defaultStart;
+            description = "Start port";
+          };
+          end = mkOption {
+            type = types.int;
+            default = defaultEnd;
+            description = "End port";
+          };
+        };
+      };
+    };
+
+  # 通用容器应用模块生成器
   mkContainerApp = {
     name,
     description ? name,
     optPath,
     image,
-    internalPort,
-    defaultHostPort ? internalPort,
+    port ? null,
+    internalPort ? port,
+    networkMode ? "bridge", # "bridge" | "host"
+    includePortRange ? false,
+    defaultPortRange ? { start = 10000; end = 10100; },
+    includeProxy ? (networkMode == "bridge"),
     dataDirs ? [ "/var/lib/${name}" ],
     volumes ? [ "/var/lib/${name}:/data" ],
+    environment ? {},
+    containerExtraOptions ? [],
     extraOptions ? {},
     extraContainerConfig ? (cfg: {}),
-    nginxExtraConfig ? "",
-    proxyWebsockets ? false,
+    nginx ? {},
   }:
   { config, pkgs, lib, ... }:
   let
     cfg = getAttrFromPath optPath config;
-    proxyEnv = mkProxyEnv { proxyCfg = cfg.proxy; baseProxy = config.base.proxy; };
-    hostPort = if cfg ? port then cfg.port else defaultHostPort;
+
+    # 规范化 Nginx 配置
+    nginxConfig = {
+      enable = true;
+      proxyWebsockets = true;
+      extraConfig = "";
+    } // nginx;
+
+    effectiveHostPort = if cfg ? port then cfg.port else port;
+    effectiveInternalPort = if internalPort != null then internalPort else effectiveHostPort;
+
+    # 解析可执行函数或静态配置
+    resolveVal = val: if isFunction val then val cfg else val;
+
+    resolvedDataDirs = resolveVal dataDirs;
+    resolvedVolumes = resolveVal volumes;
+    resolvedEnv = resolveVal environment;
+    resolvedContainerExtraOptions = resolveVal containerExtraOptions;
+    resolvedExtraContainerConfig = resolveVal extraContainerConfig;
+    resolvedNginxExtraConfig = resolveVal nginxConfig.extraConfig;
+
+    # 计算容器环境变量
+    proxyEnv =
+      if includeProxy && (cfg ? proxy) then
+        mkProxyEnv { proxyCfg = cfg.proxy; baseProxy = config.base.proxy; }
+      else if networkMode == "host" then
+        emptyProxyEnv
+      else
+        {};
+
+    combinedEnv = resolvedEnv // proxyEnv;
+
+    # 网络与端口相关配置
+    isHostNetwork = networkMode == "host";
+    containerExtraOpts = (optional isHostNetwork "--network=host") ++ resolvedContainerExtraOptions;
+
+    containerPorts =
+      if isHostNetwork then
+        []
+      else if effectiveHostPort != null && effectiveInternalPort != null then
+        if (cfg.domain != null)
+        then [ "127.0.0.1:${toString effectiveHostPort}:${toString effectiveInternalPort}" ]
+        else [ "${toString effectiveHostPort}:${toString effectiveInternalPort}" ]
+      else
+        [];
   in {
     options = setAttrByPath optPath ({
       enable = mkEnableOption description;
@@ -153,23 +228,44 @@ rec {
         description = "Container backend to use";
       };
 
+      image = mkOption {
+        type = types.str;
+        default = image;
+        description = "${description} container image";
+      };
+    }
+    // (optionalAttrs (port != null) {
+      port = mkOption {
+        type = types.port;
+        default = port;
+        description = "Port for ${description}";
+      };
+    })
+    // (optionalAttrs includeProxy {
       proxy = mkProxyOptions { inherit description; };
-    } // extraOptions);
+    })
+    // (optionalAttrs includePortRange {
+      proxyPorts = mkPortRangeOption {
+        defaultStart = defaultPortRange.start;
+        defaultEnd = defaultPortRange.end;
+      };
+    })
+    // extraOptions);
 
     config = mkIf cfg.enable (mkMerge [
       # --- Always enabled logic (including Nginx sites) ---
       {
-        base.app.web.nginx.enable = mkIf (cfg.domain != null) true;
+        base.app.web.nginx.enable = mkIf (cfg.domain != null && nginxConfig.enable) true;
 
-        base.app.web.nginx.sites = mkIf (cfg.domain != null) {
+        base.app.web.nginx.sites = mkIf (cfg.domain != null && nginxConfig.enable && effectiveHostPort != null) {
           "${cfg.domain}" = {
             http3 = true;
             quic = true;
 
             locations."/" = {
-              proxyPass = "http://127.0.0.1:${toString hostPort}";
-              inherit proxyWebsockets;
-              extraConfig = nginxExtraConfig;
+              proxyPass = "http://127.0.0.1:${toString effectiveHostPort}";
+              proxyWebsockets = nginxConfig.proxyWebsockets;
+              extraConfig = resolvedNginxExtraConfig;
             };
           };
         };
@@ -179,22 +275,34 @@ rec {
       (mkIf (!config.base.testMode) {
         base.container.${cfg.backend}.enable = true;
 
-        networking.firewall.allowedTCPPorts = mkIf (cfg.domain == null) [ hostPort ];
+        networking.firewall = mkMerge [
+          (mkIf (effectiveHostPort != null && cfg.domain == null) {
+            allowedTCPPorts = [ effectiveHostPort ];
+          })
+          (mkIf (cfg ? proxyPorts) {
+            allowedTCPPortRanges = [
+              { from = cfg.proxyPorts.start; to = cfg.proxyPorts.end; }
+            ];
+            allowedUDPPortRanges = [
+              { from = cfg.proxyPorts.start; to = cfg.proxyPorts.end; }
+            ];
+          })
+        ];
 
-        systemd.tmpfiles.rules = map (dir: "d ${dir} 0755 root root -") dataDirs;
+        systemd.tmpfiles.rules = map (dir: "d ${dir} 0755 root root -") resolvedDataDirs;
 
         virtualisation.oci-containers = {
           backend = cfg.backend;
           containers.${name} = mkMerge [
             {
-              inherit image volumes;
-              ports = if (cfg.domain != null)
-                      then [ "127.0.0.1:${toString hostPort}:${toString internalPort}" ]
-                      else [ "${toString hostPort}:${toString internalPort}" ];
-              environment = proxyEnv;
+              image = cfg.image;
+              volumes = resolvedVolumes;
+              ports = containerPorts;
+              extraOptions = containerExtraOpts;
+              environment = combinedEnv;
               autoStart = true;
             }
-            (if isFunction extraContainerConfig then extraContainerConfig cfg else extraContainerConfig)
+            resolvedExtraContainerConfig
           ];
         };
       })

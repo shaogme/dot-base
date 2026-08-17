@@ -8,7 +8,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 - **智能内存管理**：提供多种内存优化模式（Aggressive/Balanced/Conservative），完美适配从 512MB 到大内存的各类 VPS。
 - **自动化运维**：支持基于 Git 的配置自动同步与系统自动升级，内置定期垃圾回收（GC）和存储空间优化。
 - **全自动 Web 服务**：Nginx 原生集成 ACME 证书申请，支持 HTTP/3 (QUIC)，简化反向代理配置。
-- **常用应用集成**：预置 Hysteria、OpenList、Vaultwarden、X-UI-YG 等常用服务的 NixOS 模块。
+- **常用应用集成**：预置 Hysteria、OpenList、Vaultwarden、X-UI-YG、S-UI 等常用服务的 NixOS 模块。
 - **VPS 友好**：简化单网卡网络配置，支持静态 IPv4/IPv6，内置 QEMU Guest Agent 支持。
 
 ## 项目结构
@@ -75,6 +75,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 - **Nginx (`base.app.web.nginx`)**: 自动处理端口开放、SSL 证书申请及续期，一键开启 HTTP/3。
 - **Hysteria (`base.app.proxy.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
 - **X-UI-YG (`base.app.proxy.x-ui-yg`)**: 多协议代理管理面板，支持 Nginx 反代与端口范围放行。
+- **S-UI (`base.app.proxy.s-ui`)**: Sing-Box 代理管理面板，支持 Nginx 反代与端口范围放行。
 - **Web 应用**: 提供 OpenList、Vaultwarden 的一键反代接入，只需指定 `domain` 即可完成部署。
 
 ### 4. 网络适配 (`hardware`)

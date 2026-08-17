@@ -31,6 +31,14 @@ let
             enable = true;
             domain = "x-ui.example.com";
           };
+          app.proxy.s-ui = {
+            enable = true;
+            domain = "s-ui.example.com";
+            proxyPorts = {
+              start = 12000;
+              end = 12010;
+            };
+          };
           app.proxy.hysteria = {
             enable = true;
             instances.main = {
@@ -411,6 +419,54 @@ pkgs.runCommand "static-check" { } ''
   # 18. 验证 Hysteria 服务配置与 systemd 生成
   if [[ "${if cfg.systemd.services ? "hysteria-main" then "true" else "false"}" != "true" ]]; then
     echo "错误: Hysteria systemd 服务未能正确生成"
+    exit 1
+  fi
+
+  # 19. 验证 S-UI 服务配置、容器定义及 Nginx 反代
+  if [[ "${if cfg.virtualisation.oci-containers.containers ? s-ui then "true" else "false"}" != "true" ]]; then
+    echo "错误: 应包含 s-ui 容器配置"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.s-ui.image}" != "docker.io/alireza7/s-ui:latest" ]]; then
+    echo "错误: s-ui 容器镜像不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "--network=host" cfg.virtualisation.oci-containers.containers.s-ui.extraOptions then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui 容器应使用 --network=host 网络模式"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "/var/lib/s-ui/db:/app/db" cfg.virtualisation.oci-containers.containers.s-ui.volumes then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui 容器数据库挂载路径不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "/var/lib/s-ui/cert:/app/cert" cfg.virtualisation.oci-containers.containers.s-ui.volumes then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui 容器证书挂载路径不符合预期"
+    exit 1
+  fi
+  if [[ "${if cfg.services.nginx.virtualHosts ? "s-ui.example.com" then "true" else "false"}" != "true" ]]; then
+    echo "错误: Nginx 未能正确生成 s-ui.example.com 虚拟主机配置"
+    exit 1
+  fi
+
+  # 20. 验证 X-UI-YG 服务配置、容器定义及 Nginx 反代
+  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.image}" != "ghcr.io/shaogme/x-ui-yg-docker:alpine" ]]; then
+    echo "错误: x-ui-yg 容器镜像不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "--network=host" cfg.virtualisation.oci-containers.containers.x-ui-yg.extraOptions then "true" else "false"}" != "true" ]]; then
+    echo "错误: x-ui-yg 容器应使用 --network=host 网络模式"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "/var/lib/x-ui-yg:/usr/local/x-ui" cfg.virtualisation.oci-containers.containers.x-ui-yg.volumes then "true" else "false"}" != "true" ]]; then
+    echo "错误: x-ui-yg 容器挂载路径不符合预期"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.XUI_PORT}" != "54321" ]]; then
+    echo "错误: x-ui-yg 环境变量 XUI_PORT 不符合预期"
+    exit 1
+  fi
+  if [[ "${if cfg.services.nginx.virtualHosts ? "x-ui.example.com" then "true" else "false"}" != "true" ]]; then
+    echo "错误: Nginx 未能正确生成 x-ui.example.com 虚拟主机配置"
     exit 1
   fi
 
