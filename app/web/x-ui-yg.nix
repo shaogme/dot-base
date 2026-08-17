@@ -114,18 +114,7 @@ in {
             XUI_USER = cfg.username;
             XUI_PASS = cfg.password;
             XUI_PORT = "54321";
-            # 显式覆盖代理环境变量，该容器使用 host 网络且不需要代理
-            http_proxy = "";
-            https_proxy = "";
-            ftp_proxy = "";
-            all_proxy = "";
-            no_proxy = "";
-            HTTP_PROXY = "";
-            HTTPS_PROXY = "";
-            FTP_PROXY = "";
-            ALL_PROXY = "";
-            NO_PROXY = "";
-          };
+          } // lib.container.emptyProxyEnv;
           autoStart = true;
         };
       };
