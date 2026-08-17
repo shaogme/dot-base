@@ -11,6 +11,11 @@ let
           auth.root.authorizedKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... dummy@test" ];
           memory.mode = "aggressive";
           dns.smartdns.mode = "china";
+          proxy = {
+            enable = true;
+            default = "http://127.0.0.1:2080";
+            allProxy = "socks5://127.0.0.1:2080";
+          };
           container.docker.enable = true;
           performance.tuning.enable = true;
           update.enable = true;
@@ -29,7 +34,10 @@ let
         };
         # 最小化配置以满足评估要求
         boot.loader.grub.enable = false;
-        fileSystems."/".device = "/dev/dummy";
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
       }
     ];
   };
@@ -63,7 +71,10 @@ let
           };
         };
         boot.loader.grub.enable = false;
-        fileSystems."/".device = "/dev/dummy";
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
       }
     ];
   };
@@ -95,7 +106,10 @@ let
           };
         };
         boot.loader.grub.enable = false;
-        fileSystems."/".device = "/dev/dummy";
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
       }
     ];
   };
@@ -123,11 +137,39 @@ let
           };
         };
         boot.loader.grub.enable = false;
-        fileSystems."/".device = "/dev/dummy";
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
       }
     ];
   };
   cfgScripted = evalScripted.config;
+
+  # 5. Podman 与 Proxy 模式评估
+  evalPodman = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          proxy = {
+            enable = true;
+            default = "http://127.0.0.1:2080";
+            allProxy = "socks5://127.0.0.1:2080";
+          };
+          container.podman.enable = true;
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgPodman = evalPodman.config;
 in
 pkgs.runCommand "static-check" { } ''
   echo "正在验证基础配置与网络模块测试覆盖..."
@@ -277,6 +319,44 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${cfgScripted.networking.defaultGateway.address}" != "10.0.0.1" ]]; then
     echo "错误: scripted 模式 defaultGateway 不符合预期"
+    exit 1
+  fi
+
+  # 13. 验证 Proxy 配置与 nix-daemon 注入
+  if [[ "${if cfg.networking.proxy.default == "http://127.0.0.1:2080" then "true" else "false"}" != "true" ]]; then
+    echo "错误: networking.proxy.default 配置不符合预期"
+    exit 1
+  fi
+  if [[ "${cfg.systemd.services.nix-daemon.environment.http_proxy}" != "http://127.0.0.1:2080" ]]; then
+    echo "错误: nix-daemon http_proxy 环境变量注入不符合预期"
+    exit 1
+  fi
+  if [[ "${cfg.systemd.services.nix-daemon.environment.ALL_PROXY}" != "socks5://127.0.0.1:2080" ]]; then
+    echo "错误: nix-daemon ALL_PROXY 环境变量注入不符合预期"
+    exit 1
+  fi
+
+  # 14. 验证 Docker 代理配置与 host.docker.internal 替换
+  if [[ "${cfg.systemd.services.docker.environment.http_proxy}" != "http://127.0.0.1:2080" ]]; then
+    echo "错误: Docker daemon http_proxy 环境变量注入不符合预期"
+    exit 1
+  fi
+  if [[ "${cfg.environment.etc."docker/config.json".text}" != *"host.docker.internal"* ]]; then
+    echo "错误: Docker 客户端配置文件未能正确将 127.0.0.1 替换为 host.docker.internal"
+    exit 1
+  fi
+
+  # 15. 验证 Podman 代理配置与 containers.conf
+  if [[ "${if cfgPodman.virtualisation.containers.containersConf.settings.engine.http_proxy == true then "true" else "false"}" != "true" ]]; then
+    echo "错误: Podman containers.conf engine.http_proxy 应为 true"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "http_proxy=http://host.docker.internal:2080" cfgPodman.virtualisation.containers.containersConf.settings.engine.env then "true" else "false"}" != "true" ]]; then
+    echo "错误: Podman containers.conf 未能正确注入 host.docker.internal 的 http_proxy 环境变量"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "ALL_PROXY=socks5://host.docker.internal:2080" cfgPodman.virtualisation.containers.containersConf.settings.engine.env then "true" else "false"}" != "true" ]]; then
+    echo "错误: Podman containers.conf 未能正确注入 host.docker.internal 的 ALL_PROXY 环境变量"
     exit 1
   fi
 

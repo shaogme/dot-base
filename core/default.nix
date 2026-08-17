@@ -9,6 +9,7 @@ in {
     ./dns/smartdns.nix
     ./memory.nix
     ./performance/tuning.nix
+    ./proxy.nix
     ./update.nix
   ];
 

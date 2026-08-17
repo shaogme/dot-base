@@ -2,6 +2,41 @@
 with lib;
 let
   cfg = config.base.container;
+  proxyCfg = cfg.proxy;
+  baseProxy = config.base.proxy;
+
+  replaceLoopback = url:
+    if url == null then null
+    else if proxyCfg.autoReplaceLoopback then
+      builtins.replaceStrings
+        [ "127.0.0.1" "localhost" ]
+        [ proxyCfg.hostDomain proxyCfg.hostDomain ]
+        url
+    else
+      url;
+
+  containerHttpProxy = replaceLoopback baseProxy.httpProxy;
+  containerHttpsProxy = replaceLoopback baseProxy.httpsProxy;
+  containerAllProxy = replaceLoopback baseProxy.allProxy;
+  containerNoProxy = baseProxy.noProxy;
+
+  # 当回环地址被替换时，通过 engine.env 覆盖 host 传递的 127.0.0.1 环境变量
+  hasLoopbackReplaced = proxyCfg.autoReplaceLoopback && (
+    (baseProxy.httpProxy != null && containerHttpProxy != baseProxy.httpProxy) ||
+    (baseProxy.httpsProxy != null && containerHttpsProxy != baseProxy.httpsProxy) ||
+    (baseProxy.allProxy != null && containerAllProxy != baseProxy.allProxy)
+  );
+
+  containerEnvList = optionals (proxyCfg.enable && hasLoopbackReplaced) (
+    (optional (containerHttpProxy != null) "HTTP_PROXY=${containerHttpProxy}")
+    ++ (optional (containerHttpProxy != null) "http_proxy=${containerHttpProxy}")
+    ++ (optional (containerHttpsProxy != null) "HTTPS_PROXY=${containerHttpsProxy}")
+    ++ (optional (containerHttpsProxy != null) "https_proxy=${containerHttpsProxy}")
+    ++ (optional (containerAllProxy != null) "ALL_PROXY=${containerAllProxy}")
+    ++ (optional (containerAllProxy != null) "all_proxy=${containerAllProxy}")
+    ++ (optional (containerNoProxy != "") "NO_PROXY=${containerNoProxy}")
+    ++ (optional (containerNoProxy != "") "no_proxy=${containerNoProxy}")
+  );
 in {
   options.base.containerBackend = mkOption {
     type = types.enum [ "docker" "podman" ];
@@ -26,6 +61,24 @@ in {
         description = "Open firewall for Podman container interfaces";
       };
     };
+    proxy = {
+      enable = mkOption {
+        type = types.bool;
+        default = config.base.proxy.enable;
+        defaultText = literalExpression "config.base.proxy.enable";
+        description = "Enable proxy integration for containers (maps to containers.conf http_proxy and Docker proxy).";
+      };
+      autoReplaceLoopback = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Automatically replace 127.0.0.1 and localhost in proxy URLs with hostDomain for container traffic.";
+      };
+      hostDomain = mkOption {
+        type = types.str;
+        default = "host.docker.internal";
+        description = "Host gateway domain name to reach host from inside containers.";
+      };
+    };
   };
 
   config = mkMerge [
@@ -41,6 +94,33 @@ in {
           enable = true;
           setSocketVariable = true;
           daemon.settings = { dns = [ "1.1.1.1" "8.8.8.8" ]; };
+        };
+      };
+
+      # Docker daemon proxy for image pulls (runs on host network namespace)
+      systemd.services.docker.environment = mkIf (proxyCfg.enable && baseProxy.enable) (
+        lib.filterAttrs (_: v: v != null) {
+          HTTP_PROXY = baseProxy.httpProxy;
+          HTTPS_PROXY = baseProxy.httpsProxy;
+          ALL_PROXY = baseProxy.allProxy;
+          NO_PROXY = baseProxy.noProxy;
+          http_proxy = baseProxy.httpProxy;
+          https_proxy = baseProxy.httpsProxy;
+          all_proxy = baseProxy.allProxy;
+          no_proxy = baseProxy.noProxy;
+        }
+      );
+
+      # Global client config to inject proxy into containers
+      environment.etc."docker/config.json" = mkIf (proxyCfg.enable && (containerHttpProxy != null || containerHttpsProxy != null)) {
+        text = builtins.toJSON {
+          proxies = {
+            default = lib.filterAttrs (_: v: v != null) {
+              httpProxy = containerHttpProxy;
+              httpsProxy = containerHttpsProxy;
+              noProxy = containerNoProxy;
+            };
+          };
         };
       };
 
@@ -66,6 +146,15 @@ in {
         dockerSocket.enable = !cfg.docker.enable;
         # 启用容器间 DNS 解析 (支持容器名互访)
         defaultNetwork.settings.dns_enabled = true;
+      };
+
+      # containers.conf 全局容器代理配置
+      virtualisation.containers.containersConf.settings = mkIf (proxyCfg.enable && !config.base.testMode) {
+        engine = {
+          http_proxy = true;
+        } // (optionalAttrs (containerEnvList != [ ]) {
+          env = containerEnvList;
+        });
       };
 
       environment.systemPackages = with pkgs; [
