@@ -17,6 +17,16 @@ let
             allProxy = "socks5://127.0.0.1:2080";
           };
           container.docker.enable = true;
+          app.web.openlist = {
+            enable = true;
+            proxy.enable = false;
+          };
+          app.web.vaultwarden = {
+            enable = true;
+            proxy = {
+              httpProxy = "http://127.0.0.1:8888";
+            };
+          };
           performance.tuning.enable = true;
           update.enable = true;
           hardware.network = {
@@ -357,6 +367,18 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${if builtins.elem "ALL_PROXY=socks5://host.docker.internal:2080" cfgPodman.virtualisation.containers.containersConf.settings.engine.env then "true" else "false"}" != "true" ]]; then
     echo "错误: Podman containers.conf 未能正确注入 host.docker.internal 的 ALL_PROXY 环境变量"
+    exit 1
+  fi
+
+  # 16. 验证 OpenList 显式取消代理配置
+  if [[ "${cfg.virtualisation.oci-containers.containers.openlist.environment.http_proxy}" != "" ]]; then
+    echo "错误: OpenList 容器未能显式清空 http_proxy 环境变量"
+    exit 1
+  fi
+
+  # 17. 验证 Vaultwarden 独立代理配置与 host.docker.internal 替换
+  if [[ "${cfg.virtualisation.oci-containers.containers.vaultwarden.environment.http_proxy}" != "http://host.docker.internal:8888" ]]; then
+    echo "错误: Vaultwarden 独立代理配置未能正确替换为 host.docker.internal"
     exit 1
   fi
 

@@ -563,6 +563,18 @@ in {
                  "${i.dataDir}/acme:/acme"
                  "/run/hysteria/${name}/config.yaml:/etc/hysteria.yaml"
                ];
+               environment = {
+                 http_proxy = "";
+                 https_proxy = "";
+                 ftp_proxy = "";
+                 all_proxy = "";
+                 no_proxy = "";
+                 HTTP_PROXY = "";
+                 HTTPS_PROXY = "";
+                 FTP_PROXY = "";
+                 ALL_PROXY = "";
+                 NO_PROXY = "";
+               };
                command = [ "server" "-c" "/etc/hysteria.yaml" ];
              };
            };
