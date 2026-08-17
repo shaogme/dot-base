@@ -27,6 +27,10 @@ let
               httpProxy = "http://127.0.0.1:8888";
             };
           };
+          app.proxy.x-ui-yg = {
+            enable = true;
+            domain = "x-ui.example.com";
+          };
           performance.tuning.enable = true;
           update.enable = true;
           hardware.network = {
@@ -227,6 +231,10 @@ pkgs.runCommand "static-check" { } ''
   # 5. 验证容器服务 (Docker)
   if [[ "${if cfg.virtualisation.docker.enable then "true" else "false"}" != "true" ]]; then
     echo "错误: 应启用 Docker 服务"
+    exit 1
+  fi
+  if [[ "${if cfg.virtualisation.oci-containers.containers ? x-ui-yg then "true" else "false"}" != "true" ]]; then
+    echo "错误: 应包含 x-ui-yg 容器配置"
     exit 1
   fi
 

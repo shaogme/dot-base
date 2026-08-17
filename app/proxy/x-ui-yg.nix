@@ -1,9 +1,9 @@
 { config, pkgs, lib, ... }:
 with lib;
 let
-  cfg = config.base.app.web.x-ui-yg;
+  cfg = config.base.app.proxy.x-ui-yg;
 in {
-  options.base.app.web.x-ui-yg = {
+  options.base.app.proxy.x-ui-yg = {
     enable = mkEnableOption "X-UI-YG Panel";
 
     domain = mkOption {

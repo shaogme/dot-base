@@ -1,16 +1,24 @@
-{ pkgs }:
+{ pkgs ? null, lib ? null, ... } @ args:
 let
-  lib = pkgs.lib.extend (self: super: {
-    container = import ./core/container-lib.nix { lib = self; };
+  resolvedLib =
+    if lib != null then lib
+    else if pkgs != null && pkgs ? lib then pkgs.lib
+    else (import <nixpkgs> { }).lib;
+
+  container = import ./core/container-lib.nix { lib = resolvedLib; };
+  extendedLib = resolvedLib.extend (self: super: {
+    inherit container;
   });
 in
 {
-  inherit lib;
+  lib = extendedLib;
   nixosModules = {
-    default = { ... }: {
-      _module.args.lib = lib;
+    default = { lib, ... }: {
+      _module.args.lib = lib.extend (self: super: {
+        container = import ./core/container-lib.nix { lib = self; };
+      });
       imports = [
-        (import ./app/default.nix { inherit lib; })
+        ./app/default.nix
         ./core/default.nix
         ./hardware/default.nix
       ];

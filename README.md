@@ -25,8 +25,8 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 │   ├── performance/      # Tuned 性能 profile
 │   └── update.nix        # Git 同步与自动更新
 ├── app/                  # 应用模块
-│   ├── proxy/            # 代理服务 (Hysteria 等)
-│   ├── web/              # Web 服务 (Nginx, OpenList, Vaultwarden, X-UI)
+│   ├── proxy/            # 代理服务 (Hysteria, X-UI-YG 等)
+│   ├── web/              # Web 服务 (Nginx, OpenList, Vaultwarden)
 │   └── default.nix
 ├── hardware/             # 硬件与网络适配
 │   ├── network/          # 单网卡/多网卡与静态 IP 配置
@@ -73,8 +73,9 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 
 ### 3. 应用服务 (`app`)
 - **Nginx (`base.app.web.nginx`)**: 自动处理端口开放、SSL 证书申请及续期，一键开启 HTTP/3。
-- **Hysteria (`base.app.web.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
-- **Web 应用**: 提供 OpenList、Vaultwarden、X-UI-YG 的一键反代接入，只需指定 `domain` 即可完成部署。
+- **Hysteria (`base.app.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
+- **X-UI-YG (`base.app.proxy.x-ui-yg`)**: 多协议代理管理面板，支持 Nginx 反代与端口范围放行。
+- **Web 应用**: 提供 OpenList、Vaultwarden 的一键反代接入，只需指定 `domain` 即可完成部署。
 
 ### 4. 网络适配 (`hardware`)
 - **`base.hardware.network`**: 统一网络配置抽象模块，支持 `systemd-networkd`（默认）、`networkmanager` 及 `scripted`（NixOS 传统脚本模式）三大后端。支持多网卡的 DHCP、静态 IPv4/IPv6、自定义路由、MAC 地址克隆、MTU 设置以及针对特定后端的属性扩展（如 NetworkManager keyfile profiles 与 systemd-networkd linkConfig/networkConfig）。启用后会默认禁用 Facter 自动 DHCP，避免其生成的 networkd 配置覆盖显式接口配置。
