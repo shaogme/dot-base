@@ -5,7 +5,7 @@
   # Example Configuration: Shows all available options for the Hysteria module
   
   config = lib.mkIf false { # 默认禁用，仅作为参考 Disabled by default, for reference only
-    base.app.hysteria = {
+    base.app.proxy.hysteria = {
       enable = true;
       
       # 容器后端选择 (docker 或 podman)

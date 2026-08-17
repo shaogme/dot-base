@@ -31,6 +31,24 @@ let
             enable = true;
             domain = "x-ui.example.com";
           };
+          app.proxy.hysteria = {
+            enable = true;
+            instances.main = {
+              domain = "hy.test.com";
+              portHopping = {
+                enable = true;
+                range = "20000-50000";
+                interface = "eth0";
+              };
+              settings = {
+                listen = ":20000";
+                bandwidth = {
+                  up = "100 mbps";
+                  down = "100 mbps";
+                };
+              };
+            };
+          };
           performance.tuning.enable = true;
           update.enable = true;
           hardware.network = {
@@ -387,6 +405,12 @@ pkgs.runCommand "static-check" { } ''
   # 17. 验证 Vaultwarden 独立代理配置与 host.docker.internal 替换
   if [[ "${cfg.virtualisation.oci-containers.containers.vaultwarden.environment.http_proxy}" != "http://host.docker.internal:8888" ]]; then
     echo "错误: Vaultwarden 独立代理配置未能正确替换为 host.docker.internal"
+    exit 1
+  fi
+
+  # 18. 验证 Hysteria 服务配置与 systemd 生成
+  if [[ "${if cfg.systemd.services ? "hysteria-main" then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hysteria systemd 服务未能正确生成"
     exit 1
   fi
 

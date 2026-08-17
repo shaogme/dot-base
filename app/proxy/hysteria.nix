@@ -3,7 +3,7 @@
 with lib;
 
 let
-  cfg = config.base.app.hysteria;
+  cfg = config.base.app.proxy.hysteria;
   yamlFormat = pkgs.formats.yaml { };
 
   removeEmpty = let
@@ -460,7 +460,7 @@ in {
   # ==========================================
   # 接口定义 (Options)
   # ==========================================
-  options.base.app.hysteria = {
+  options.base.app.proxy.hysteria = {
     enable = mkEnableOption "Hysteria Server";
 
     backend = mkOption {

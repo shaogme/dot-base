@@ -1,7 +1,6 @@
 { config, pkgs, lib, ... }:
 let
-  container = if lib ? container then lib.container else import ../../core/container-lib.nix { inherit lib; };
-  appModule = container.mkContainerApp {
+  appModule = lib.container.mkContainerApp {
     name = "vaultwarden";
     description = "Vaultwarden Password Manager";
     optPath = [ "base" "app" "web" "vaultwarden" ];

@@ -73,7 +73,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 
 ### 3. 应用服务 (`app`)
 - **Nginx (`base.app.web.nginx`)**: 自动处理端口开放、SSL 证书申请及续期，一键开启 HTTP/3。
-- **Hysteria (`base.app.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
+- **Hysteria (`base.app.proxy.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
 - **X-UI-YG (`base.app.proxy.x-ui-yg`)**: 多协议代理管理面板，支持 Nginx 反代与端口范围放行。
 - **Web 应用**: 提供 OpenList、Vaultwarden 的一键反代接入，只需指定 `domain` 即可完成部署。
 

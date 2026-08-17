@@ -13,16 +13,20 @@ in
 {
   lib = extendedLib;
   nixosModules = {
-    default = { lib, ... }: {
-      _module.args.lib = lib.extend (self: super: {
-        container = import ./core/container-lib.nix { lib = self; };
-      });
-      imports = [
-        ./app/default.nix
-        ./core/default.nix
-        ./hardware/default.nix
-      ];
-    };
+    default = { pkgs ? null, lib, ... } @ moduleArgs:
+      let
+        extLib = lib.extend (self: super: {
+          container = import ./core/container-lib.nix { lib = self; };
+        });
+        argsWithLib = moduleArgs // { lib = extLib; };
+      in
+      {
+        imports = [
+          (import ./app/default.nix argsWithLib)
+          (import ./core/default.nix argsWithLib)
+          (import ./hardware/default.nix argsWithLib)
+        ];
+      };
     kernel-xanmod = ./kernel/xanmod.nix;
   };
 }

@@ -1,11 +1,11 @@
-{ config, lib, pkgs, modulesPath, ... }:
+{ config, lib, pkgs, modulesPath, ... } @ args:
 
 let
   cfg = config.base.hardware;
 in
 {
   imports = [
-    ./network
+    (import ./network args)
   ];
 
   options.base.hardware = {

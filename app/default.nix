@@ -1,10 +1,10 @@
-{ ... }:
+{ config, pkgs, lib, ... } @ args:
 {
   imports = [
-    ./web/openlist.nix
-    ./web/nginx.nix
-    ./proxy/x-ui-yg.nix
-    ./web/vaultwarden.nix
-    ./proxy/hysteria.nix
+    (import ./web/openlist.nix args)
+    (import ./web/nginx.nix args)
+    (import ./proxy/x-ui-yg.nix args)
+    (import ./web/vaultwarden.nix args)
+    (import ./proxy/hysteria.nix args)
   ];
 }

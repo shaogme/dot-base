@@ -1,16 +1,16 @@
-{ lib, config, pkgs, ... }:
+{ lib, config, pkgs, ... } @ args:
 with lib;
 let
   cfg = config.base;
 in {
   imports = [
-    ./auth.nix
-    ./container.nix
-    ./dns/smartdns.nix
-    ./memory.nix
-    ./performance/tuning.nix
-    ./proxy.nix
-    ./update.nix
+    (import ./auth.nix args)
+    (import ./container.nix args)
+    (import ./dns/smartdns.nix args)
+    (import ./memory.nix args)
+    (import ./performance/tuning.nix args)
+    (import ./proxy.nix args)
+    (import ./update.nix args)
   ];
 
   options.base = {
