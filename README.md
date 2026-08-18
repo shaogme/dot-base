@@ -76,7 +76,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 - **Hysteria (`base.app.proxy.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
 - **X-UI-YG (`base.app.proxy.x-ui-yg`)**: 多协议代理管理面板，支持 Nginx 反代与端口范围放行。
 - **S-UI (`base.app.proxy.s-ui`)**: Sing-Box 代理管理面板，支持 Nginx 反代与端口范围放行。
-- **Web 应用**: 提供 OpenList、Vaultwarden 的一键反代接入，只需指定 `domain` 即可完成部署。
+- **Web 应用**: 提供 OpenList、Vaultwarden 的一键反代接入，通过 `nginx = { enable = true; domain = "..."; }` 快速配置反向代理与证书。
 
 ### 4. 网络适配 (`hardware`)
 - **`base.hardware.network`**: 统一网络配置抽象模块，支持 `systemd-networkd`（默认）、`networkmanager` 及 `scripted`（NixOS 传统脚本模式）三大后端。支持多网卡的 DHCP、静态 IPv4/IPv6、自定义路由、MAC 地址克隆、MTU 设置以及针对特定后端的属性扩展（如 NetworkManager keyfile profiles 与 systemd-networkd linkConfig/networkConfig）。启用后会默认禁用 Facter 自动 DHCP，避免其生成的 networkd 配置覆盖显式接口配置。
@@ -114,7 +114,10 @@ Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这
           # 部署应用示例
           base.app.web.openlist = {
             enable = true;
-            domain = "openlist.example.com";
+            nginx = {
+              enable = true;
+              domain = "openlist.example.com";
+            };
           };
         })
       ];

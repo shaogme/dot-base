@@ -168,13 +168,6 @@ rec {
   let
     cfg = getAttrFromPath optPath config;
 
-    # 规范化 Nginx 配置
-    nginxConfig = {
-      enable = true;
-      proxyWebsockets = true;
-      extraConfig = "";
-    } // nginx;
-
     effectiveHostPort = if cfg ? port then cfg.port else port;
     effectiveInternalPort = if internalPort != null then internalPort else effectiveHostPort;
 
@@ -186,7 +179,7 @@ rec {
     resolvedEnv = resolveVal environment;
     resolvedContainerExtraOptions = resolveVal containerExtraOptions;
     resolvedExtraContainerConfig = resolveVal extraContainerConfig;
-    resolvedNginxExtraConfig = resolveVal nginxConfig.extraConfig;
+    resolvedNginxExtraConfig = resolveVal cfg.nginx.extraConfig;
 
     # 计算容器环境变量
     proxyEnv =
@@ -207,7 +200,7 @@ rec {
       if isHostNetwork then
         []
       else if effectiveHostPort != null && effectiveInternalPort != null then
-        if (cfg.domain != null)
+        if cfg.nginx.enable
         then [ "127.0.0.1:${toString effectiveHostPort}:${toString effectiveInternalPort}" ]
         else [ "${toString effectiveHostPort}:${toString effectiveInternalPort}" ]
       else
@@ -216,10 +209,25 @@ rec {
     options = setAttrByPath optPath ({
       enable = mkEnableOption description;
 
-      domain = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = "Domain name for ${description} (enables Nginx integration)";
+      nginx = {
+        enable = mkEnableOption "Nginx reverse proxy for ${description}";
+
+        domain = mkOption {
+          type = types.str;
+          description = "Domain name for ${description}";
+        };
+
+        proxyWebsockets = mkOption {
+          type = types.bool;
+          default = if nginx ? proxyWebsockets then nginx.proxyWebsockets else true;
+          description = "Enable websocket proxying in Nginx for ${description}";
+        };
+
+        extraConfig = mkOption {
+          type = types.lines;
+          default = if nginx ? extraConfig then nginx.extraConfig else "";
+          description = "Extra Nginx configuration for ${description}";
+        };
       };
 
       backend = mkOption {
@@ -255,16 +263,16 @@ rec {
     config = mkIf cfg.enable (mkMerge [
       # --- Always enabled logic (including Nginx sites) ---
       {
-        base.app.web.nginx.enable = mkIf (cfg.domain != null && nginxConfig.enable) true;
+        base.app.web.nginx.enable = mkIf cfg.nginx.enable true;
 
-        base.app.web.nginx.sites = mkIf (cfg.domain != null && nginxConfig.enable && effectiveHostPort != null) {
-          "${cfg.domain}" = {
+        base.app.web.nginx.sites = mkIf (cfg.nginx.enable && effectiveHostPort != null) {
+          "${cfg.nginx.domain}" = {
             http3 = true;
             quic = true;
 
             locations."/" = {
               proxyPass = "http://127.0.0.1:${toString effectiveHostPort}";
-              proxyWebsockets = nginxConfig.proxyWebsockets;
+              proxyWebsockets = cfg.nginx.proxyWebsockets;
               extraConfig = resolvedNginxExtraConfig;
             };
           };
@@ -276,7 +284,7 @@ rec {
         base.container.${cfg.backend}.enable = true;
 
         networking.firewall = mkMerge [
-          (mkIf (effectiveHostPort != null && cfg.domain == null) {
+          (mkIf (effectiveHostPort != null && !cfg.nginx.enable) {
             allowedTCPPorts = [ effectiveHostPort ];
           })
           (mkIf (cfg ? proxyPorts) {

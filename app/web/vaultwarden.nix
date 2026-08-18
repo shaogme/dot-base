@@ -10,8 +10,8 @@ let
     volumes = [
       "/var/lib/vaultwarden:/data"
     ];
-    environment = cfg: lib.optionalAttrs (cfg.domain != null) {
-      DOMAIN = "https://${cfg.domain}";
+    environment = cfg: lib.optionalAttrs cfg.nginx.enable {
+      DOMAIN = "https://${cfg.nginx.domain}";
     };
     nginx = {
       extraConfig = ''

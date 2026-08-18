@@ -29,11 +29,17 @@ let
           };
           app.proxy.x-ui-yg = {
             enable = true;
-            domain = "x-ui.example.com";
+            nginx = {
+              enable = true;
+              domain = "x-ui.example.com";
+            };
           };
           app.proxy.s-ui = {
             enable = true;
-            domain = "s-ui.example.com";
+            nginx = {
+              enable = true;
+              domain = "s-ui.example.com";
+            };
             proxyPorts = {
               start = 12000;
               end = 12010;
