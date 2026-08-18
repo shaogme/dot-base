@@ -20,6 +20,11 @@ let
           app.web.openlist = {
             enable = true;
             proxy.enable = false;
+            ports.web.port = 5080;
+            extraPorts.custom = {
+              port = 3000;
+              protocol = "tcp";
+            };
           };
           app.web.vaultwarden = {
             enable = true;
@@ -44,22 +49,27 @@ let
               enable = true;
               domain = "s-ui.example.com";
             };
-            ports = [
-              2095
-              {
+            ports = {
+              nodes = {
                 start = 12000;
                 end = 12010;
-              }
-              {
+              };
+            };
+            extraPorts = {
+              apiTcp = {
                 port = 8888;
                 protocol = "tcp";
-              }
-              {
+              };
+              dnsUdp = {
                 port = 9999;
                 protocol = "udp";
-              }
-              "13000-13010/tcp"
-            ];
+              };
+              rangeTcp = {
+                start = 13000;
+                end = 13010;
+                protocol = "tcp";
+              };
+            };
           };
           app.proxy.hysteria = {
             enable = true;
@@ -431,12 +441,24 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: OpenList 容器未能显式清空 http_proxy 环境变量"
     exit 1
   fi
-  if [[ "${if builtins.elem "5244:5244" cfg.virtualisation.oci-containers.containers.openlist.ports then "true" else "false"}" != "true" ]]; then
-    echo "错误: OpenList 容器端口映射 5244:5244 不符合预期"
+  if [[ "${if builtins.elem "5080:5244" cfg.virtualisation.oci-containers.containers.openlist.ports then "true" else "false"}" != "true" ]]; then
+    echo "错误: OpenList 覆写宿主机端口后容器端口映射 5080:5244 不符合预期"
     exit 1
   fi
-  if [[ "${if builtins.elem 5244 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
-    echo "错误: OpenList 防火墙开放 TCP 端口 5244 不符合预期"
+  if [[ "${if builtins.elem "3000:3000/tcp" cfg.virtualisation.oci-containers.containers.openlist.ports then "true" else "false"}" != "true" ]]; then
+    echo "错误: OpenList extraPorts 容器端口映射 3000:3000/tcp 不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 5080 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
+    echo "错误: OpenList 防火墙开放 TCP 端口 5080 不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 3000 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
+    echo "错误: OpenList 防火墙开放 extraPorts TCP 端口 3000 不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 3000 cfg.networking.firewall.allowedUDPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: OpenList extraPorts TCP 端口不应在 UDP 放行"
     exit 1
   fi
 
@@ -510,11 +532,11 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
   if [[ "${if builtins.elem { from = 13000; to = 13010; } cfg.networking.firewall.allowedTCPPortRanges then "true" else "false"}" != "true" ]]; then
-    echo "错误: s-ui ports 字符串格式 TCP 端口范围放行不符合预期"
+    echo "错误: s-ui extraPorts TCP 端口范围放行不符合预期"
     exit 1
   fi
   if [[ "${if builtins.elem { from = 13000; to = 13010; } cfg.networking.firewall.allowedUDPPortRanges then "true" else "false"}" != "false" ]]; then
-    echo "错误: s-ui ports 字符串格式 TCP 端口范围不应放行 UDP"
+    echo "错误: s-ui extraPorts TCP 端口范围不应放行 UDP"
     exit 1
   fi
 

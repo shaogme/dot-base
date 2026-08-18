@@ -6,8 +6,10 @@ let
     optPath = [ "base" "app" "web" "vaultwarden" ];
     image = "docker.io/vaultwarden/server:latest";
     ports = {
-      port = 8000;
-      internalPort = 80;
+      web = {
+        port = 8000;
+        internalPort = 80;
+      };
     };
     volumes = [
       "/var/lib/vaultwarden:/data"
@@ -16,6 +18,7 @@ let
       DOMAIN = "https://${cfg.nginx.domain}";
     };
     nginx = {
+      portName = "web";
       extraConfig = ''
         client_max_body_size 128M;
       '';

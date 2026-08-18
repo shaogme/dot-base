@@ -1,68 +1,95 @@
 { lib ? (import <nixpkgs> {}).lib }:
 with lib;
+let
+  # 辅助函数：选取列表中第一个非 null 的值
+  firstNonNull = findFirst (x: x != null) null;
+
+  # 通用端口选项属性集构造器（供预定义端口和 extraPorts 子模块复用）
+  mkPortOptionDefs = { name ? "container", def ? {} }:
+    let
+      mkPortOpt = default: desc: mkOption {
+        type = types.nullOr types.port;
+        inherit default;
+        description = "${desc} for ${name}.";
+      };
+      mkAlias = target: mkOption {
+        type = types.nullOr types.port;
+        default = null;
+        description = "Alias for ${target}.";
+      };
+      mkAliases = target: names: genAttrs names (_: mkAlias target);
+
+      defaultPort = def.port or def.hostPort or null;
+      defaultInternalPort = def.internalPort or def.containerPort or defaultPort;
+      defaultStart = def.start or def.from or def.hostStart or def.hostFrom or null;
+      defaultEnd = def.end or def.to or def.hostEnd or def.hostTo or null;
+      defaultInternalStart = def.internalStart or def.internalFrom or def.containerStart or def.containerFrom or defaultStart;
+      defaultInternalEnd = def.internalEnd or def.internalTo or def.containerEnd or def.containerTo or defaultEnd;
+    in
+    {
+      enable = mkOption {
+        type = types.bool;
+        default = def.enable or true;
+        description = "Enable or disable ${name} port mapping.";
+      };
+      port = mkPortOpt defaultPort "Host port number";
+      internalPort = mkPortOpt defaultInternalPort "Container internal port number";
+      start = mkPortOpt defaultStart "Host start port for range";
+      end = mkPortOpt defaultEnd "Host end port for range";
+      internalStart = mkPortOpt defaultInternalStart "Container start port for range";
+      internalEnd = mkPortOpt defaultInternalEnd "Container end port for range";
+      protocol = mkOption {
+        type = types.either (types.enum [ "both" "tcp" "udp" "tcp+udp" "all" ]) (types.listOf (types.enum [ "tcp" "udp" ]));
+        default = def.protocol or "both";
+        description = "Protocol to open: 'both', 'tcp', 'udp' or list of protocols (default: 'both').";
+      };
+    }
+    // mkAliases "port" [ "hostPort" ]
+    // mkAliases "internalPort" [ "containerPort" ]
+    // mkAliases "start" [ "from" "hostStart" "hostFrom" ]
+    // mkAliases "end" [ "to" "hostEnd" "hostTo" ]
+    // mkAliases "internalStart" [ "internalFrom" "containerStart" "containerFrom" ]
+    // mkAliases "internalEnd" [ "internalTo" "containerEnd" "containerTo" ];
+in
 rec {
   # 统一的空代理环境变量集合，供 host 网络或明确无需代理的容器使用
-  emptyProxyEnv = {
-    http_proxy = "";
-    https_proxy = "";
-    ftp_proxy = "";
-    all_proxy = "";
-    no_proxy = "";
-    HTTP_PROXY = "";
-    HTTPS_PROXY = "";
-    FTP_PROXY = "";
-    ALL_PROXY = "";
-    NO_PROXY = "";
-  };
+  emptyProxyEnv =
+    let
+      keys = [ "http_proxy" "https_proxy" "ftp_proxy" "all_proxy" "no_proxy" ];
+    in
+    genAttrs (keys ++ map toUpper keys) (_: "");
 
   # 容器代理配置项生成器
-  mkProxyOptions = { description ? "container", ... }: {
-    enable = mkOption {
-      type = types.nullOr types.bool;
-      default = null;
-      description = "Proxy behavior for ${description} container: true to explicitly enable, false to explicitly disable/cancel inheritance, null to inherit default.";
+  mkProxyOptions = { description ? "container", ... }:
+    let
+      mkProxyStrOpt = example: desc: mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        inherit example;
+        description = "${desc} for ${description} container.";
+      };
+    in {
+      enable = mkOption {
+        type = types.nullOr types.bool;
+        default = null;
+        description = "Proxy behavior for ${description} container: true to explicitly enable, false to explicitly disable/cancel inheritance, null to inherit default.";
+      };
+      default = mkProxyStrOpt "http://127.0.0.1:2080" "Default proxy URL";
+      httpProxy = mkProxyStrOpt "http://127.0.0.1:2080" "HTTP proxy URL";
+      httpsProxy = mkProxyStrOpt "http://127.0.0.1:2080" "HTTPS proxy URL";
+      allProxy = mkProxyStrOpt "socks5://127.0.0.1:2080" "ALL_PROXY URL";
+      noProxy = mkProxyStrOpt "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12" "NO_PROXY list";
+      autoReplaceLoopback = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Automatically replace 127.0.0.1 and localhost in proxy URLs with hostDomain.";
+      };
+      hostDomain = mkOption {
+        type = types.str;
+        default = "host.docker.internal";
+        description = "Host gateway domain name for ${description} container.";
+      };
     };
-    default = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "http://127.0.0.1:2080";
-      description = "Default proxy URL for ${description} container.";
-    };
-    httpProxy = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "http://127.0.0.1:2080";
-      description = "HTTP proxy URL for ${description} container.";
-    };
-    httpsProxy = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "http://127.0.0.1:2080";
-      description = "HTTPS proxy URL for ${description} container.";
-    };
-    allProxy = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "socks5://127.0.0.1:2080";
-      description = "ALL_PROXY URL for ${description} container.";
-    };
-    noProxy = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12";
-      description = "NO_PROXY list for ${description} container.";
-    };
-    autoReplaceLoopback = mkOption {
-      type = types.bool;
-      default = true;
-      description = "Automatically replace 127.0.0.1 and localhost in proxy URLs with hostDomain.";
-    };
-    hostDomain = mkOption {
-      type = types.str;
-      default = "host.docker.internal";
-      description = "Host gateway domain name for ${description} container.";
-    };
-  };
 
   # 容器代理环境变量解析函数
   mkProxyEnv = { proxyCfg, baseProxy }:
@@ -80,35 +107,30 @@ rec {
           else
             url;
 
-        httpP = replaceLoopback (
-          if proxyCfg.httpProxy != null then proxyCfg.httpProxy
+        resolveProxy = key: replaceLoopback (
+          if proxyCfg.${key} != null then proxyCfg.${key}
           else if proxyCfg.default != null then proxyCfg.default
-          else baseProxy.httpProxy
+          else baseProxy.${key}
         );
-        httpsP = replaceLoopback (
-          if proxyCfg.httpsProxy != null then proxyCfg.httpsProxy
-          else if proxyCfg.default != null then proxyCfg.default
-          else baseProxy.httpsProxy
-        );
-        allP = replaceLoopback (
-          if proxyCfg.allProxy != null then proxyCfg.allProxy
-          else if proxyCfg.default != null then proxyCfg.default
-          else baseProxy.allProxy
-        );
+
+        httpP = resolveProxy "httpProxy";
+        httpsP = resolveProxy "httpsProxy";
+        allP = resolveProxy "allProxy";
         noP =
           if proxyCfg.noProxy != null then proxyCfg.noProxy
           else if proxyCfg.enable == true then "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
           else baseProxy.noProxy;
-      in filterAttrs (_: v: v != null) {
-        http_proxy = httpP;
-        HTTP_PROXY = httpP;
-        https_proxy = httpsP;
-        HTTPS_PROXY = httpsP;
-        all_proxy = allP;
-        ALL_PROXY = allP;
-        no_proxy = noP;
-        NO_PROXY = noP;
-      }
+
+        proxyVars = {
+          http_proxy = httpP;
+          https_proxy = httpsP;
+          all_proxy = allP;
+          no_proxy = noP;
+        };
+      in
+      filterAttrs (_: v: v != null) (
+        proxyVars // mapAttrs' (k: v: nameValuePair (toUpper k) v) proxyVars
+      )
     else {};
 
   # 通用 Backend Option 生成器
@@ -119,160 +141,41 @@ rec {
       inherit description;
     };
 
-  # 解析端口字符串形式，例如 "8080", "8080:80", "8080:80/tcp", "10000-10100", "10000-10100:10000-10100/udp"
-  parsePortString = str:
-    let
-      protoParts = splitString "/" str;
-      mappingPart = head protoParts;
-      proto = if length protoParts > 1 then elemAt protoParts 1 else "both";
-      colonParts = splitString ":" mappingPart;
-      hostPart = head colonParts;
-      containerPart = if length colonParts > 1 then elemAt colonParts 1 else null;
-      hostDash = splitString "-" hostPart;
-      isHostRange = length hostDash == 2;
-      containerDash = if containerPart != null then splitString "-" containerPart else [];
-      isContainerRange = length containerDash == 2;
-    in
-      if isHostRange then {
-        from = toInt (head hostDash);
-        to = toInt (elemAt hostDash 1);
-        internalFrom = if isContainerRange then toInt (head containerDash) else null;
-        internalTo = if isContainerRange then toInt (elemAt containerDash 1) else null;
-        protocol = proto;
-      } else {
-        port = toInt hostPart;
-        internalPort = if containerPart != null then toInt containerPart else null;
-        protocol = proto;
-      };
+  # 预定义端口配置项 Option 构造器
+  mkPredefinedPortOption = name: def: mkPortOptionDefs { inherit name def; };
 
-  # 端口项子模块定义
-  portItemSubmodule = types.submodule {
-    options = {
-      port = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Host port number (alias: hostPort)";
-      };
-      hostPort = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Host port number";
-      };
-      internalPort = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Container internal port number (alias: containerPort)";
-      };
-      containerPort = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Container internal port number";
-      };
-      from = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Host start port for range (alias: start, hostFrom, hostStart)";
-      };
-      to = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Host end port for range (alias: end, hostTo, hostEnd)";
-      };
-      start = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Host start port for range";
-      };
-      end = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Host end port for range";
-      };
-      internalFrom = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Container start port for range (alias: internalStart, containerFrom, containerStart)";
-      };
-      internalTo = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Container end port for range (alias: internalEnd, containerTo, containerEnd)";
-      };
-      internalStart = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Container start port for range";
-      };
-      internalEnd = mkOption {
-        type = types.nullOr types.port;
-        default = null;
-        description = "Container end port for range";
-      };
-      range = mkOption {
-        type = types.nullOr (types.either (types.attrsOf types.port) types.str);
-        default = null;
-        description = "Port range specification";
-      };
-      protocol = mkOption {
-        type = types.either (types.enum [ "both" "tcp" "udp" "tcp+udp" "all" ]) (types.listOf (types.enum [ "tcp" "udp" ]));
-        default = "both";
-        description = "Protocol to open: 'both', 'tcp', 'udp' or list of protocols (default: 'both')";
-      };
-    };
+  # 用户额外添加端口映射子模块定义
+  extraPortSubmodule = types.submodule {
+    options = mkPortOptionDefs { name = "port"; def = {}; };
   };
 
-  # 端口项类型，支持数字 (如 8080)、字符串 (如 \"8080:80/tcp\")、属性集 (如 { port = 8000; internalPort = 80; }) 自动转换
-  portItemType = types.coercedTo
-    (types.either types.port (types.either types.str (types.attrsOf types.anything)))
-    (val:
-      if isInt val then { port = val; }
-      else if isString val then parsePortString val
-      else val
-    )
-    portItemSubmodule;
-
-  # 支持单个对象或数组的 ports 类型
-  portsOptionType = types.coercedTo
-    (types.either portItemType (types.listOf portItemType))
-    (val: if isList val then val else [ val ])
-    (types.listOf portItemType);
-
   # 规范化单条端口配置
-  normalizePortItem = raw:
+  normalizePortItem = item:
     let
-      item =
-        if isInt raw then { port = raw; protocol = "both"; }
-        else if isString raw then parsePortString raw
-        else raw;
+      hPort = firstNonNull [ item.hostPort item.port ];
+      cPort = firstNonNull [ item.containerPort item.internalPort ];
 
-      rangeObj = item.range or null;
-      rStart = if rangeObj != null && isAttrs rangeObj then (rangeObj.from or rangeObj.start or null) else null;
-      rEnd = if rangeObj != null && isAttrs rangeObj then (rangeObj.to or rangeObj.end or null) else null;
+      hStart = firstNonNull [ item.hostStart item.hostFrom item.from item.start ];
+      hEnd = firstNonNull [ item.hostEnd item.hostTo item.to item.end ];
 
-      hFrom = if item.from or null != null then item.from else if item.start or null != null then item.start else if item.hostFrom or null != null then item.hostFrom else if item.hostStart or null != null then item.hostStart else rStart;
-      hTo = if item.to or null != null then item.to else if item.end or null != null then item.end else if item.hostTo or null != null then item.hostTo else if item.hostEnd or null != null then item.hostEnd else rEnd;
+      cStart = firstNonNull [ item.containerStart item.containerFrom item.internalFrom item.internalStart ];
+      cEnd = firstNonNull [ item.containerEnd item.containerTo item.internalTo item.internalEnd ];
 
-      cFrom = if item.internalFrom or null != null then item.internalFrom else if item.internalStart or null != null then item.internalStart else if item.containerFrom or null != null then item.containerFrom else if item.containerStart or null != null then item.containerStart else hFrom;
-      cTo = if item.internalTo or null != null then item.internalTo else if item.internalEnd or null != null then item.internalEnd else if item.containerTo or null != null then item.containerTo else if item.containerEnd or null != null then item.containerEnd else hTo;
-
-      hPort = if item.port or null != null then item.port else if item.hostPort or null != null then item.hostPort else null;
-      cPort = if item.internalPort or null != null then item.internalPort else if item.containerPort or null != null then item.containerPort else hPort;
-
-      p = item.protocol or "both";
+      p = item.protocol;
       hasTCP = if isList p then elem "tcp" p else elem p [ "both" "tcp" "tcp+udp" "all" ];
       hasUDP = if isList p then elem "udp" p else elem p [ "both" "udp" "tcp+udp" "all" ];
     in
-      if hFrom != null && hTo != null then {
+      if hStart != null && hEnd != null then {
         kind = "range";
-        from = hFrom;
-        to = hTo;
-        internalFrom = cFrom;
-        internalTo = cTo;
+        from = hStart;
+        to = hEnd;
+        internalFrom = if cStart != null then cStart else hStart;
+        internalTo = if cEnd != null then cEnd else hEnd;
         inherit hasTCP hasUDP;
       } else if hPort != null then {
         kind = "port";
         port = hPort;
-        internalPort = cPort;
+        internalPort = if cPort != null then cPort else hPort;
         inherit hasTCP hasUDP;
       } else
         throw "Invalid port configuration in ports option";
@@ -283,7 +186,7 @@ rec {
     description ? name,
     optPath,
     image,
-    ports ? [],
+    ports ? {},
     networkMode ? "bridge", # "bridge" | "host"
     includeProxy ? (networkMode == "bridge"),
     dataDirs ? [ "/var/lib/${name}" ],
@@ -298,12 +201,36 @@ rec {
   let
     cfg = getAttrFromPath optPath config;
 
-    defaultPortsList = if isList ports then ports else (if ports != null then [ ports ] else []);
+    declaredPorts = if isAttrs ports then ports else {};
 
     # 规范化端口列表
-    normalizedPorts = map normalizePortItem cfg.ports;
-    portItems = filter (x: x.kind == "port") normalizedPorts;
-    effectiveHostPort = if portItems != [] then (head portItems).port else null;
+    enabledPorts = filterAttrs (_: p: p.enable) cfg.ports;
+    enabledExtraPorts = filterAttrs (_: p: p.enable) cfg.extraPorts;
+
+    allEnabledPortValues = (attrValues enabledPorts) ++ (attrValues enabledExtraPorts);
+    normalizedPorts = map normalizePortItem allEnabledPortValues;
+
+    # 确定用于 Nginx 反代的 effectiveHostPort
+    # 由 cfg.nginx.port 显式指定，或通过 cfg.nginx.portName 引用已配置的命名端口
+    effectiveHostPort =
+      if cfg.nginx.port != null then
+        cfg.nginx.port
+      else if cfg.nginx.portName != null then
+        let
+          targetPort =
+            if enabledPorts ? ${cfg.nginx.portName} then
+              enabledPorts.${cfg.nginx.portName}
+            else if enabledExtraPorts ? ${cfg.nginx.portName} then
+              enabledExtraPorts.${cfg.nginx.portName}
+            else
+              null;
+        in
+          if targetPort != null then
+            (if targetPort.hostPort != null then targetPort.hostPort else targetPort.port)
+          else
+            null
+      else
+        null;
 
     # 解析可执行函数或静态配置
     resolveVal = val: if isFunction val then val cfg else val;
@@ -335,22 +262,20 @@ rec {
         []
       else
         concatMap (item:
+          let
+            protoSuffix =
+              if item.hasTCP && item.hasUDP then ""
+              else if item.hasTCP then "/tcp"
+              else "/udp";
+          in
           if item.kind == "port" then
-            if cfg.nginx.enable && item.port == effectiveHostPort then
-              [ "127.0.0.1:${toString item.port}:${toString item.internalPort}" ]
-            else if item.hasTCP && item.hasUDP then
-              [ "${toString item.port}:${toString item.internalPort}" ]
-            else if item.hasTCP then
-              [ "${toString item.port}:${toString item.internalPort}/tcp" ]
-            else
-              [ "${toString item.port}:${toString item.internalPort}/udp" ]
+            let
+              hostPrefix = if cfg.nginx.enable && item.port == effectiveHostPort then "127.0.0.1:" else "";
+              suffix = if cfg.nginx.enable && item.port == effectiveHostPort then "" else protoSuffix;
+            in
+              [ "${hostPrefix}${toString item.port}:${toString item.internalPort}${suffix}" ]
           else
-            if item.hasTCP && item.hasUDP then
-              [ "${toString item.from}-${toString item.to}:${toString item.internalFrom}-${toString item.internalTo}" ]
-            else if item.hasTCP then
-              [ "${toString item.from}-${toString item.to}:${toString item.internalFrom}-${toString item.internalTo}/tcp" ]
-            else
-              [ "${toString item.from}-${toString item.to}:${toString item.internalFrom}-${toString item.internalTo}/udp" ]
+            [ "${toString item.from}-${toString item.to}:${toString item.internalFrom}-${toString item.internalTo}${protoSuffix}" ]
         ) normalizedPorts;
 
     firewallItems = filter (item:
@@ -360,10 +285,12 @@ rec {
     options = setAttrByPath optPath ({
       enable = mkEnableOption description;
 
-      ports = mkOption {
-        type = portsOptionType;
-        default = defaultPortsList;
-        description = "Port mappings and firewall configurations for ${description}. Supports single port/object or array.";
+      ports = mapAttrs mkPredefinedPortOption declaredPorts;
+
+      extraPorts = mkOption {
+        type = types.attrsOf extraPortSubmodule;
+        default = {};
+        description = "Extra user-defined port mappings for ${description}.";
       };
 
       nginx = {
@@ -372,6 +299,18 @@ rec {
         domain = mkOption {
           type = types.str;
           description = "Domain name for ${description}";
+        };
+
+        portName = mkOption {
+          type = types.nullOr types.str;
+          default = if nginx ? portName then nginx.portName else null;
+          description = "Name of the port in ports/extraPorts to proxy through Nginx for ${description}";
+        };
+
+        port = mkOption {
+          type = types.nullOr types.port;
+          default = if nginx ? port then nginx.port else null;
+          description = "Explicit port number to proxy through Nginx for ${description} (overrides portName)";
         };
 
         proxyWebsockets = mkOption {
@@ -407,15 +346,26 @@ rec {
     config = mkIf cfg.enable (mkMerge [
       # --- Always enabled logic (including Nginx sites) ---
       {
+        assertions = [
+          {
+            assertion = !cfg.nginx.enable || (effectiveHostPort != null);
+            message = "Container '${name}' has nginx reverse proxy enabled, but effectiveHostPort could not be resolved. Please specify 'nginx.port' or a valid 'nginx.portName'.";
+          }
+        ];
+
         base.app.web.nginx.enable = mkIf cfg.nginx.enable true;
 
-        base.app.web.nginx.sites = mkIf (cfg.nginx.enable && effectiveHostPort != null) {
+        base.app.web.nginx.sites = mkIf cfg.nginx.enable {
           "${cfg.nginx.domain}" = {
             http3 = true;
             quic = true;
 
             locations."/" = {
-              proxyPass = "http://127.0.0.1:${toString effectiveHostPort}";
+              proxyPass =
+                if effectiveHostPort != null then
+                  "http://127.0.0.1:${toString effectiveHostPort}"
+                else
+                  throw "Container '${name}' has nginx enabled, but effectiveHostPort could not be resolved.";
               proxyWebsockets = cfg.nginx.proxyWebsockets;
               extraConfig = resolvedNginxExtraConfig;
             };

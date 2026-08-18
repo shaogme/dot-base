@@ -6,10 +6,18 @@ let
     optPath = [ "base" "app" "proxy" "s-ui" ];
     image = "docker.io/alireza7/s-ui:latest";
     networkMode = "host";
-    ports = [
-      2095
-      { start = 10100; end = 10200; }
-    ];
+    ports = {
+      panel = {
+        port = 2095;
+      };
+      subscription = {
+        port = 2096;
+      };
+      nodes = {
+        start = 10100;
+        end = 10200;
+      };
+    };
     dataDirs = [
       "/var/lib/s-ui"
       "/var/lib/s-ui/db"
@@ -28,6 +36,7 @@ let
       TZ = "Asia/Shanghai";
     };
     nginx = {
+      portName = "panel";
       proxyWebsockets = true;
       extraConfig = ''
         client_max_body_size 0;

@@ -5,7 +5,11 @@ let
     description = "OpenList File Listing";
     optPath = [ "base" "app" "web" "openlist" ];
     image = "docker.io/openlistteam/openlist:latest";
-    ports = 5244;
+    ports = {
+      web = {
+        port = 5244;
+      };
+    };
     volumes = [
       "/var/lib/openlist:/opt/openlist/data"
     ];
@@ -16,6 +20,7 @@ let
       user = "0:0";
     };
     nginx = {
+      portName = "web";
       extraConfig = ''
         client_max_body_size 0;
       '';

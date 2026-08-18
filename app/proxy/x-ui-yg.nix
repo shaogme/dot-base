@@ -6,10 +6,15 @@ let
     optPath = [ "base" "app" "proxy" "x-ui-yg" ];
     image = "ghcr.io/shaogme/x-ui-yg-docker:alpine";
     networkMode = "host";
-    ports = [
-      54321
-      { start = 10000; end = 10100; }
-    ];
+    ports = {
+      panel = {
+        port = 54321;
+      };
+      nodes = {
+        start = 10000;
+        end = 10100;
+      };
+    };
     extraOptions = {
       username = lib.mkOption {
         type = lib.types.str;
@@ -41,6 +46,7 @@ let
       XUI_PORT = "54321";
     };
     nginx = {
+      portName = "panel";
       proxyWebsockets = true;
       extraConfig = ''
         client_max_body_size 0;
