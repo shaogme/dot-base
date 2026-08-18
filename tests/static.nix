@@ -24,6 +24,7 @@ let
             extraPorts.custom = {
               port = 3000;
               protocol = "tcp";
+              firewall.open = true;
             };
           };
           app.web.vaultwarden = {
@@ -54,21 +55,25 @@ let
               nodes = {
                 start = 12000;
                 end = 12010;
+                firewall.open = true;
               };
             };
             extraPorts = {
               apiTcp = {
                 port = 8888;
                 protocol = "tcp";
+                firewall.open = true;
               };
               dnsUdp = {
                 port = 9999;
                 protocol = "udp";
+                firewall.open = true;
               };
               rangeTcp = {
                 start = 13000;
                 end = 13010;
                 protocol = "tcp";
+                firewall.open = true;
               };
             };
           };
@@ -455,8 +460,8 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: OpenList extraPorts 容器端口映射 3000:3000/tcp 不符合预期"
     exit 1
   fi
-  if [[ "${if builtins.elem 5080 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
-    echo "错误: OpenList 防火墙开放 TCP 端口 5080 不符合预期"
+  if [[ "${if builtins.elem 5080 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: OpenList 默认不应在防火墙开放 TCP 端口 5080"
     exit 1
   fi
   if [[ "${if builtins.elem 3000 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then

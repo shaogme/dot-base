@@ -25,6 +25,13 @@ let
       defaultEnd = def.end or def.to or def.hostEnd or def.hostTo or null;
       defaultInternalStart = def.internalStart or def.internalFrom or def.containerStart or def.containerFrom or defaultStart;
       defaultInternalEnd = def.internalEnd or def.internalTo or def.containerEnd or def.containerTo or defaultEnd;
+      defaultFirewallOpen =
+        if def ? firewall && isAttrs def.firewall && def.firewall ? open then
+          def.firewall.open
+        else if def ? firewall && isBool def.firewall then
+          def.firewall
+        else
+          false;
     in
     {
       enable = mkOption {
@@ -42,6 +49,13 @@ let
         type = types.either (types.enum [ "both" "tcp" "udp" "tcp+udp" "all" ]) (types.listOf (types.enum [ "tcp" "udp" ]));
         default = def.protocol or "both";
         description = "Protocol to open: 'both', 'tcp', 'udp' or list of protocols (default: 'both').";
+      };
+      firewall = {
+        open = mkOption {
+          type = types.bool;
+          default = defaultFirewallOpen;
+          description = "Whether to open firewall for ${name} port (default: false).";
+        };
       };
     }
     // mkAliases "port" [ "hostPort" ]
@@ -88,6 +102,13 @@ rec {
       p = item.protocol;
       hasTCP = if isList p then elem "tcp" p else elem p [ "both" "tcp" "tcp+udp" "all" ];
       hasUDP = if isList p then elem "udp" p else elem p [ "both" "udp" "tcp+udp" "all" ];
+      firewallOpen =
+        if item ? firewall && isAttrs item.firewall && item.firewall ? open then
+          item.firewall.open
+        else if item ? firewall && isBool item.firewall then
+          item.firewall
+        else
+          false;
     in
       if hStart != null && hEnd != null then {
         kind = "range";
@@ -96,11 +117,13 @@ rec {
         internalFrom = if cStart != null then cStart else hStart;
         internalTo = if cEnd != null then cEnd else hEnd;
         inherit hasTCP hasUDP;
+        firewall = firewallOpen;
       } else if hPort != null then {
         kind = "port";
         port = hPort;
         internalPort = if cPort != null then cPort else hPort;
         inherit hasTCP hasUDP;
+        firewall = firewallOpen;
       } else
         throw "Invalid port configuration in ports option";
 
@@ -200,9 +223,7 @@ rec {
             [ "${toString item.from}-${toString item.to}:${toString item.internalFrom}-${toString item.internalTo}${protoSuffix}" ]
         ) normalizedPorts;
 
-    firewallItems = filter (item:
-      !(cfg.nginx.enable && item.kind == "port" && item.port == effectiveHostPort)
-    ) normalizedPorts;
+    firewallItems = filter (item: item.firewall) normalizedPorts;
   in {
     options = setAttrByPath optPath ({
       enable = mkEnableOption description;
