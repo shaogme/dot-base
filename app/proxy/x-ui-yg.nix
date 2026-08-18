@@ -5,10 +5,11 @@ let
     description = "X-UI-YG Panel";
     optPath = [ "base" "app" "proxy" "x-ui-yg" ];
     image = "ghcr.io/shaogme/x-ui-yg-docker:alpine";
-    port = 54321;
     networkMode = "host";
-    includePortRange = true;
-    defaultPortRange = { start = 10000; end = 10100; };
+    ports = [
+      54321
+      { start = 10000; end = 10100; }
+    ];
     extraOptions = {
       username = lib.mkOption {
         type = lib.types.str;

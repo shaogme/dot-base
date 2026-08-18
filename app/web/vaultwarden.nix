@@ -5,8 +5,10 @@ let
     description = "Vaultwarden Password Manager";
     optPath = [ "base" "app" "web" "vaultwarden" ];
     image = "docker.io/vaultwarden/server:latest";
-    port = 8000;
-    internalPort = 80;
+    ports = {
+      port = 8000;
+      internalPort = 80;
+    };
     volumes = [
       "/var/lib/vaultwarden:/data"
     ];

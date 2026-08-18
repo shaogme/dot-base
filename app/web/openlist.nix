@@ -5,7 +5,7 @@ let
     description = "OpenList File Listing";
     optPath = [ "base" "app" "web" "openlist" ];
     image = "docker.io/openlistteam/openlist:latest";
-    port = 5244;
+    ports = 5244;
     volumes = [
       "/var/lib/openlist:/opt/openlist/data"
     ];

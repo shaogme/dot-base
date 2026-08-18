@@ -23,6 +23,10 @@ let
           };
           app.web.vaultwarden = {
             enable = true;
+            nginx = {
+              enable = true;
+              domain = "vw.example.com";
+            };
             proxy = {
               httpProxy = "http://127.0.0.1:8888";
             };
@@ -40,10 +44,22 @@ let
               enable = true;
               domain = "s-ui.example.com";
             };
-            proxyPorts = {
-              start = 12000;
-              end = 12010;
-            };
+            ports = [
+              2095
+              {
+                start = 12000;
+                end = 12010;
+              }
+              {
+                port = 8888;
+                protocol = "tcp";
+              }
+              {
+                port = 9999;
+                protocol = "udp";
+              }
+              "13000-13010/tcp"
+            ];
           };
           app.proxy.hysteria = {
             enable = true;
@@ -410,15 +426,31 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 16. 验证 OpenList 显式取消代理配置
+  # 16. 验证 OpenList 显式取消代理配置与端口映射
   if [[ "${cfg.virtualisation.oci-containers.containers.openlist.environment.http_proxy}" != "" ]]; then
     echo "错误: OpenList 容器未能显式清空 http_proxy 环境变量"
     exit 1
   fi
+  if [[ "${if builtins.elem "5244:5244" cfg.virtualisation.oci-containers.containers.openlist.ports then "true" else "false"}" != "true" ]]; then
+    echo "错误: OpenList 容器端口映射 5244:5244 不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 5244 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
+    echo "错误: OpenList 防火墙开放 TCP 端口 5244 不符合预期"
+    exit 1
+  fi
 
-  # 17. 验证 Vaultwarden 独立代理配置与 host.docker.internal 替换
+  # 17. 验证 Vaultwarden 独立代理配置、host.docker.internal 替换与 Nginx 本地反代端口映射
   if [[ "${cfg.virtualisation.oci-containers.containers.vaultwarden.environment.http_proxy}" != "http://host.docker.internal:8888" ]]; then
     echo "错误: Vaultwarden 独立代理配置未能正确替换为 host.docker.internal"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "127.0.0.1:8000:80" cfg.virtualisation.oci-containers.containers.vaultwarden.ports then "true" else "false"}" != "true" ]]; then
+    echo "错误: Vaultwarden 容器端口映射 127.0.0.1:8000:80 不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 8000 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: Vaultwarden 在启用 Nginx 时不应在外部防火墙开放 8000 端口"
     exit 1
   fi
 
@@ -451,6 +483,38 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${if cfg.services.nginx.virtualHosts ? "s-ui.example.com" then "true" else "false"}" != "true" ]]; then
     echo "错误: Nginx 未能正确生成 s-ui.example.com 虚拟主机配置"
+    exit 1
+  fi
+  if [[ "${if builtins.elem { from = 12000; to = 12010; } cfg.networking.firewall.allowedTCPPortRanges then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui ports TCP 端口范围放行不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem { from = 12000; to = 12010; } cfg.networking.firewall.allowedUDPPortRanges then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui ports UDP 端口范围放行不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 8888 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui ports 单端口 TCP 放行不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 8888 cfg.networking.firewall.allowedUDPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: s-ui ports 单端口 TCP 放行不应放行 UDP"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 9999 cfg.networking.firewall.allowedUDPPorts then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui ports 单端口 UDP 放行不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 9999 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: s-ui ports 单端口 UDP 放行不应放行 TCP"
+    exit 1
+  fi
+  if [[ "${if builtins.elem { from = 13000; to = 13010; } cfg.networking.firewall.allowedTCPPortRanges then "true" else "false"}" != "true" ]]; then
+    echo "错误: s-ui ports 字符串格式 TCP 端口范围放行不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem { from = 13000; to = 13010; } cfg.networking.firewall.allowedUDPPortRanges then "true" else "false"}" != "false" ]]; then
+    echo "错误: s-ui ports 字符串格式 TCP 端口范围不应放行 UDP"
     exit 1
   fi
 

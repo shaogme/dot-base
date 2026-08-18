@@ -5,10 +5,11 @@ let
     description = "S-UI (Sing-box UI) Panel";
     optPath = [ "base" "app" "proxy" "s-ui" ];
     image = "docker.io/alireza7/s-ui:latest";
-    port = 2095;
     networkMode = "host";
-    includePortRange = true;
-    defaultPortRange = { start = 10100; end = 10200; };
+    ports = [
+      2095
+      { start = 10100; end = 10200; }
+    ];
     dataDirs = [
       "/var/lib/s-ui"
       "/var/lib/s-ui/db"
