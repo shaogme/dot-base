@@ -144,6 +144,7 @@ rec {
     ports ? {},
     networkMode ? "bridge", # "bridge" | "host"
     includeProxy ? true,
+    proxy ? {},
     dataDirs ? [ "/var/lib/${name}" ],
     volumes ? [ "/var/lib/${name}:/data" ],
     environment ? {},
@@ -290,10 +291,10 @@ rec {
       };
     }
     // (optionalAttrs includeProxy {
-      proxy = mkProxyOptions {
+      proxy = mkProxyOptions ({
         inherit description;
         autoReplaceLoopback = !isHostNetwork;
-      };
+      } // proxy);
     })
     // extraOptions);
 

@@ -23,10 +23,12 @@ rec {
   mkProxyOptions = {
     description ? "service",
     defaultMode ? "auto",
+    mode ? defaultMode,
     autoReplaceLoopback ? true,
     hostDomain ? "host.docker.internal",
   }:
     let
+      effectiveDefaultMode = mode;
       mkProxyStrOpt = example: desc: mkOption {
         type = types.nullOr types.str;
         default = null;
@@ -36,7 +38,7 @@ rec {
     in {
       mode = mkOption {
         type = types.enum [ "auto" "disable" "overwrite" ];
-        default = defaultMode;
+        default = effectiveDefaultMode;
         description = "Proxy configuration mode for ${description}: 'auto' (follow global proxy), 'disable' (explicitly disable/unset proxy env), or 'overwrite' (use custom proxy URLs).";
       };
 

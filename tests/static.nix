@@ -48,6 +48,7 @@ let
           };
           app.proxy.s-ui = {
             enable = true;
+            proxy.mode = "auto";
             nginx = {
               enable = true;
               domain = "s-ui.example.com";
@@ -501,7 +502,7 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 19. 验证 S-UI 服务配置、容器定义及 Nginx 反代
+  # 19. 验证 S-UI 服务配置、容器定义及客户覆盖 auto proxy 规则
   if [[ "${if cfg.virtualisation.oci-containers.containers ? s-ui then "true" else "false"}" != "true" ]]; then
     echo "错误: 应包含 s-ui 容器配置"
     exit 1
@@ -515,11 +516,11 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
   if [[ "${cfg.virtualisation.oci-containers.containers.s-ui.environment.http_proxy}" != "http://127.0.0.1:2080" ]]; then
-    echo "错误: s-ui host 网络模式未能正确继承宿主机 http_proxy 环境变量"
+    echo "错误: s-ui 在显式设置 proxy.mode = 'auto' 时未能正确按 auto 规则继承宿主机 http_proxy 环境变量"
     exit 1
   fi
   if [[ "${cfg.virtualisation.oci-containers.containers.s-ui.environment.ALL_PROXY}" != "socks5://127.0.0.1:2080" ]]; then
-    echo "错误: s-ui host 网络模式未能正确继承宿主机 ALL_PROXY 环境变量"
+    echo "错误: s-ui 在显式设置 proxy.mode = 'auto' 时未能正确按 auto 规则继承宿主机 ALL_PROXY 环境变量"
     exit 1
   fi
   if [[ "${if builtins.elem "/var/lib/s-ui/db:/app/db" cfg.virtualisation.oci-containers.containers.s-ui.volumes then "true" else "false"}" != "true" ]]; then
@@ -575,7 +576,7 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 20. 验证 X-UI-YG 服务配置、容器定义及 Nginx 反代
+  # 20. 验证 X-UI-YG 服务配置、容器定义及默认 disable proxy
   if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.image}" != "ghcr.io/shaogme/x-ui-yg-docker:alpine" ]]; then
     echo "错误: x-ui-yg 容器镜像不符合预期"
     exit 1
@@ -584,12 +585,12 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: x-ui-yg 容器应使用 --network=host 网络模式"
     exit 1
   fi
-  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.http_proxy}" != "http://127.0.0.1:2080" ]]; then
-    echo "错误: x-ui-yg host 网络模式未能正确继承宿主机 http_proxy 环境变量"
+  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.http_proxy}" != "" ]]; then
+    echo "错误: x-ui-yg 默认应禁用代理 (http_proxy 应为空)"
     exit 1
   fi
-  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.ALL_PROXY}" != "socks5://127.0.0.1:2080" ]]; then
-    echo "错误: x-ui-yg host 网络模式未能正确继承宿主机 ALL_PROXY 环境变量"
+  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.ALL_PROXY}" != "" ]]; then
+    echo "错误: x-ui-yg 默认应禁用代理 (ALL_PROXY 应为空)"
     exit 1
   fi
   if [[ "${if builtins.elem "/var/lib/x-ui-yg:/usr/local/x-ui" cfg.virtualisation.oci-containers.containers.x-ui-yg.volumes then "true" else "false"}" != "true" ]]; then

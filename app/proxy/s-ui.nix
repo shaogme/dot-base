@@ -6,6 +6,9 @@ let
     optPath = [ "base" "app" "proxy" "s-ui" ];
     image = "docker.io/alireza7/s-ui:latest";
     networkMode = "host";
+    proxy = {
+      defaultMode = "disable";
+    };
     ports = {
       panel = {
         port = 2095;

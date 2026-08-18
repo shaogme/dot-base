@@ -6,6 +6,9 @@ let
     optPath = [ "base" "app" "proxy" "x-ui-yg" ];
     image = "ghcr.io/shaogme/x-ui-yg-docker:alpine";
     networkMode = "host";
+    proxy = {
+      defaultMode = "disable";
+    };
     ports = {
       panel = {
         port = 54321;
