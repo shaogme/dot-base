@@ -6,8 +6,9 @@ let
     else (import <nixpkgs> { }).lib;
 
   container = import ./core/container-lib.nix { lib = resolvedLib; };
+  proxy = import ./core/proxy-lib.nix { lib = resolvedLib; };
   extendedLib = resolvedLib.extend (self: super: {
-    inherit container;
+    inherit container proxy;
   });
 in
 {
@@ -17,6 +18,7 @@ in
       let
         extLib = lib.extend (self: super: {
           container = import ./core/container-lib.nix { lib = self; };
+          proxy = import ./core/proxy-lib.nix { lib = self; };
         });
         argsWithLib = moduleArgs // { lib = extLib; };
       in

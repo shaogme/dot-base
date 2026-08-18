@@ -4,20 +4,11 @@ let
   cfg = config.base.container;
   proxyCfg = cfg.proxy;
   baseProxy = config.base.proxy;
+  proxyLib = import ./proxy-lib.nix { inherit lib; };
 
-  replaceLoopback = url:
-    if url == null then null
-    else if proxyCfg.autoReplaceLoopback then
-      builtins.replaceStrings
-        [ "127.0.0.1" "localhost" ]
-        [ proxyCfg.hostDomain proxyCfg.hostDomain ]
-        url
-    else
-      url;
-
-  containerHttpProxy = replaceLoopback baseProxy.httpProxy;
-  containerHttpsProxy = replaceLoopback baseProxy.httpsProxy;
-  containerAllProxy = replaceLoopback baseProxy.allProxy;
+  containerHttpProxy = proxyLib.replaceLoopback { url = baseProxy.httpProxy; inherit (proxyCfg) hostDomain; enable = proxyCfg.autoReplaceLoopback; };
+  containerHttpsProxy = proxyLib.replaceLoopback { url = baseProxy.httpsProxy; inherit (proxyCfg) hostDomain; enable = proxyCfg.autoReplaceLoopback; };
+  containerAllProxy = proxyLib.replaceLoopback { url = baseProxy.allProxy; inherit (proxyCfg) hostDomain; enable = proxyCfg.autoReplaceLoopback; };
   containerNoProxy = baseProxy.noProxy;
 
   # 当回环地址被替换时，通过 engine.env 覆盖 host 传递的 127.0.0.1 环境变量

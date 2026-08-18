@@ -19,7 +19,7 @@ let
           container.docker.enable = true;
           app.web.openlist = {
             enable = true;
-            proxy.enable = false;
+            proxy.mode = "disable";
             ports.web.port = 5080;
             extraPorts.custom = {
               port = 3000;
@@ -33,6 +33,7 @@ let
               domain = "vw.example.com";
             };
             proxy = {
+              mode = "overwrite";
               httpProxy = "http://127.0.0.1:8888";
             };
           };
@@ -232,6 +233,7 @@ let
             allProxy = "socks5://127.0.0.1:2080";
           };
           container.podman.enable = true;
+          app.web.openlist.enable = true;
         };
         boot.loader.grub.enable = false;
         fileSystems."/" = {
@@ -435,8 +437,12 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: Podman containers.conf 未能正确注入 host.docker.internal 的 ALL_PROXY 环境变量"
     exit 1
   fi
+  if [[ "${cfgPodman.virtualisation.oci-containers.containers.openlist.environment.http_proxy}" != "http://host.docker.internal:2080" ]]; then
+    echo "错误: OpenList 容器在 auto 模式下未能正确继承 host.docker.internal 的 http_proxy 环境变量"
+    exit 1
+  fi
 
-  # 16. 验证 OpenList 显式取消代理配置与端口映射
+  # 16. 验证 OpenList 显式取消代理配置与端口映射 (mode = "disable")
   if [[ "${cfg.virtualisation.oci-containers.containers.openlist.environment.http_proxy}" != "" ]]; then
     echo "错误: OpenList 容器未能显式清空 http_proxy 环境变量"
     exit 1
@@ -495,6 +501,14 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: s-ui 容器应使用 --network=host 网络模式"
     exit 1
   fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.s-ui.environment.http_proxy}" != "http://127.0.0.1:2080" ]]; then
+    echo "错误: s-ui host 网络模式未能正确继承宿主机 http_proxy 环境变量"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.s-ui.environment.ALL_PROXY}" != "socks5://127.0.0.1:2080" ]]; then
+    echo "错误: s-ui host 网络模式未能正确继承宿主机 ALL_PROXY 环境变量"
+    exit 1
+  fi
   if [[ "${if builtins.elem "/var/lib/s-ui/db:/app/db" cfg.virtualisation.oci-containers.containers.s-ui.volumes then "true" else "false"}" != "true" ]]; then
     echo "错误: s-ui 容器数据库挂载路径不符合预期"
     exit 1
@@ -547,6 +561,14 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${if builtins.elem "--network=host" cfg.virtualisation.oci-containers.containers.x-ui-yg.extraOptions then "true" else "false"}" != "true" ]]; then
     echo "错误: x-ui-yg 容器应使用 --network=host 网络模式"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.http_proxy}" != "http://127.0.0.1:2080" ]]; then
+    echo "错误: x-ui-yg host 网络模式未能正确继承宿主机 http_proxy 环境变量"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.environment.ALL_PROXY}" != "socks5://127.0.0.1:2080" ]]; then
+    echo "错误: x-ui-yg host 网络模式未能正确继承宿主机 ALL_PROXY 环境变量"
     exit 1
   fi
   if [[ "${if builtins.elem "/var/lib/x-ui-yg:/usr/local/x-ui" cfg.virtualisation.oci-containers.containers.x-ui-yg.volumes then "true" else "false"}" != "true" ]]; then

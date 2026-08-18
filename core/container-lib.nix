@@ -50,88 +50,12 @@ let
     // mkAliases "end" [ "to" "hostEnd" "hostTo" ]
     // mkAliases "internalStart" [ "internalFrom" "containerStart" "containerFrom" ]
     // mkAliases "internalEnd" [ "internalTo" "containerEnd" "containerTo" ];
+  proxyLib = import ./proxy-lib.nix { inherit lib; };
 in
 rec {
-  # 统一的空代理环境变量集合，供 host 网络或明确无需代理的容器使用
-  emptyProxyEnv =
-    let
-      keys = [ "http_proxy" "https_proxy" "ftp_proxy" "all_proxy" "no_proxy" ];
-    in
-    genAttrs (keys ++ map toUpper keys) (_: "");
-
-  # 容器代理配置项生成器
-  mkProxyOptions = { description ? "container", ... }:
-    let
-      mkProxyStrOpt = example: desc: mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        inherit example;
-        description = "${desc} for ${description} container.";
-      };
-    in {
-      enable = mkOption {
-        type = types.nullOr types.bool;
-        default = null;
-        description = "Proxy behavior for ${description} container: true to explicitly enable, false to explicitly disable/cancel inheritance, null to inherit default.";
-      };
-      default = mkProxyStrOpt "http://127.0.0.1:2080" "Default proxy URL";
-      httpProxy = mkProxyStrOpt "http://127.0.0.1:2080" "HTTP proxy URL";
-      httpsProxy = mkProxyStrOpt "http://127.0.0.1:2080" "HTTPS proxy URL";
-      allProxy = mkProxyStrOpt "socks5://127.0.0.1:2080" "ALL_PROXY URL";
-      noProxy = mkProxyStrOpt "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12" "NO_PROXY list";
-      autoReplaceLoopback = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Automatically replace 127.0.0.1 and localhost in proxy URLs with hostDomain.";
-      };
-      hostDomain = mkOption {
-        type = types.str;
-        default = "host.docker.internal";
-        description = "Host gateway domain name for ${description} container.";
-      };
-    };
-
-  # 容器代理环境变量解析函数
-  mkProxyEnv = { proxyCfg, baseProxy }:
-    if proxyCfg.enable == false then
-      emptyProxyEnv
-    else if proxyCfg.enable == true || proxyCfg.default != null || proxyCfg.httpProxy != null || proxyCfg.httpsProxy != null || proxyCfg.allProxy != null then
-      let
-        replaceLoopback = url:
-          if url == null then null
-          else if proxyCfg.autoReplaceLoopback then
-            builtins.replaceStrings
-              [ "127.0.0.1" "localhost" ]
-              [ proxyCfg.hostDomain proxyCfg.hostDomain ]
-              url
-          else
-            url;
-
-        resolveProxy = key: replaceLoopback (
-          if proxyCfg.${key} != null then proxyCfg.${key}
-          else if proxyCfg.default != null then proxyCfg.default
-          else baseProxy.${key}
-        );
-
-        httpP = resolveProxy "httpProxy";
-        httpsP = resolveProxy "httpsProxy";
-        allP = resolveProxy "allProxy";
-        noP =
-          if proxyCfg.noProxy != null then proxyCfg.noProxy
-          else if proxyCfg.enable == true then "127.0.0.1,localhost,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
-          else baseProxy.noProxy;
-
-        proxyVars = {
-          http_proxy = httpP;
-          https_proxy = httpsP;
-          all_proxy = allP;
-          no_proxy = noP;
-        };
-      in
-      filterAttrs (_: v: v != null) (
-        proxyVars // mapAttrs' (k: v: nameValuePair (toUpper k) v) proxyVars
-      )
-    else {};
+  inherit (proxyLib) emptyProxyEnv mkProxyOptions resolveProxyEnv replaceLoopback;
+  # 兼容性别名
+  mkProxyEnv = resolveProxyEnv;
 
   # 通用 Backend Option 生成器
   mkBackendOption = { description ? "Container backend to use" }:
@@ -188,7 +112,7 @@ rec {
     image,
     ports ? {},
     networkMode ? "bridge", # "bridge" | "host"
-    includeProxy ? (networkMode == "bridge"),
+    includeProxy ? true,
     dataDirs ? [ "/var/lib/${name}" ],
     volumes ? [ "/var/lib/${name}:/data" ],
     environment ? {},
@@ -200,6 +124,7 @@ rec {
   { config, pkgs, lib, ... }:
   let
     cfg = getAttrFromPath optPath config;
+    isHostNetwork = networkMode == "host";
 
     declaredPorts = if isAttrs ports then ports else {};
 
@@ -246,15 +171,12 @@ rec {
     proxyEnv =
       if includeProxy && (cfg ? proxy) then
         mkProxyEnv { proxyCfg = cfg.proxy; baseProxy = config.base.proxy; }
-      else if networkMode == "host" then
-        emptyProxyEnv
       else
         {};
 
     combinedEnv = resolvedEnv // proxyEnv;
 
     # 网络与端口相关配置
-    isHostNetwork = networkMode == "host";
     containerExtraOpts = (optional isHostNetwork "--network=host") ++ resolvedContainerExtraOptions;
 
     containerPorts =
@@ -339,7 +261,10 @@ rec {
       };
     }
     // (optionalAttrs includeProxy {
-      proxy = mkProxyOptions { inherit description; };
+      proxy = mkProxyOptions {
+        inherit description;
+        autoReplaceLoopback = !isHostNetwork;
+      };
     })
     // extraOptions);
 
