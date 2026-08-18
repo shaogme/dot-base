@@ -7,6 +7,7 @@ let
   # 通用端口选项属性集构造器（供预定义端口和 extraPorts 子模块复用）
   mkPortOptionDefs = { name ? "container", def ? {} }:
     let
+      resolvedDef = if isInt def then { port = def; } else if isAttrs def then def else {};
       mkPortOpt = default: desc: mkOption {
         type = types.nullOr types.port;
         inherit default;
@@ -19,24 +20,24 @@ let
       };
       mkAliases = target: names: genAttrs names (_: mkAlias target);
 
-      defaultPort = def.port or def.hostPort or null;
-      defaultInternalPort = def.internalPort or def.containerPort or defaultPort;
-      defaultStart = def.start or def.from or def.hostStart or def.hostFrom or null;
-      defaultEnd = def.end or def.to or def.hostEnd or def.hostTo or null;
-      defaultInternalStart = def.internalStart or def.internalFrom or def.containerStart or def.containerFrom or defaultStart;
-      defaultInternalEnd = def.internalEnd or def.internalTo or def.containerEnd or def.containerTo or defaultEnd;
+      defaultPort = resolvedDef.port or resolvedDef.hostPort or null;
+      defaultInternalPort = resolvedDef.internalPort or resolvedDef.containerPort or defaultPort;
+      defaultStart = resolvedDef.start or resolvedDef.from or resolvedDef.hostStart or resolvedDef.hostFrom or null;
+      defaultEnd = resolvedDef.end or resolvedDef.to or resolvedDef.hostEnd or resolvedDef.hostTo or null;
+      defaultInternalStart = resolvedDef.internalStart or resolvedDef.internalFrom or resolvedDef.containerStart or resolvedDef.containerFrom or defaultStart;
+      defaultInternalEnd = resolvedDef.internalEnd or resolvedDef.internalTo or resolvedDef.containerEnd or resolvedDef.containerTo or defaultEnd;
       defaultFirewallOpen =
-        if def ? firewall && isAttrs def.firewall && def.firewall ? open then
-          def.firewall.open
-        else if def ? firewall && isBool def.firewall then
-          def.firewall
+        if resolvedDef ? firewall && isAttrs resolvedDef.firewall && resolvedDef.firewall ? open then
+          resolvedDef.firewall.open
+        else if resolvedDef ? firewall && isBool resolvedDef.firewall then
+          resolvedDef.firewall
         else
           false;
     in
     {
       enable = mkOption {
         type = types.bool;
-        default = def.enable or true;
+        default = resolvedDef.enable or true;
         description = "Enable or disable ${name} port mapping.";
       };
       port = mkPortOpt defaultPort "Host port number";
@@ -47,7 +48,7 @@ let
       internalEnd = mkPortOpt defaultInternalEnd "Container end port for range";
       protocol = mkOption {
         type = types.either (types.enum [ "both" "tcp" "udp" "tcp+udp" "all" ]) (types.listOf (types.enum [ "tcp" "udp" ]));
-        default = def.protocol or "both";
+        default = resolvedDef.protocol or "both";
         description = "Protocol to open: 'both', 'tcp', 'udp' or list of protocols (default: 'both').";
       };
       firewall = {
@@ -80,12 +81,19 @@ rec {
     };
 
   # 预定义端口配置项 Option 构造器
-  mkPredefinedPortOption = name: def: mkPortOptionDefs { inherit name def; };
+  mkPredefinedPortOption = name: def:
+    mkOption {
+      type = types.nullOr (types.coercedTo types.port (p: { port = p; }) (types.submodule {
+        options = mkPortOptionDefs { inherit name def; };
+      }));
+      default = {};
+      description = "Port configuration for ${name}. Set to null or enable = false to disable.";
+    };
 
   # 用户额外添加端口映射子模块定义
-  extraPortSubmodule = types.submodule {
+  extraPortSubmodule = types.nullOr (types.coercedTo types.port (p: { port = p; }) (types.submodule {
     options = mkPortOptionDefs { name = "port"; def = {}; };
-  };
+  }));
 
   # 规范化单条端口配置
   normalizePortItem = item:
@@ -152,8 +160,8 @@ rec {
     declaredPorts = if isAttrs ports then ports else {};
 
     # 规范化端口列表
-    enabledPorts = filterAttrs (_: p: p.enable) cfg.ports;
-    enabledExtraPorts = filterAttrs (_: p: p.enable) cfg.extraPorts;
+    enabledPorts = filterAttrs (_: p: p != null && p.enable) cfg.ports;
+    enabledExtraPorts = filterAttrs (_: p: p != null && p.enable) cfg.extraPorts;
 
     allEnabledPortValues = (attrValues enabledPorts) ++ (attrValues enabledExtraPorts);
     normalizedPorts = map normalizePortItem allEnabledPortValues;
@@ -166,9 +174,9 @@ rec {
       else if cfg.nginx.portName != null then
         let
           targetPort =
-            if enabledPorts ? ${cfg.nginx.portName} then
+            if (enabledPorts ? ${cfg.nginx.portName}) && enabledPorts.${cfg.nginx.portName} != null then
               enabledPorts.${cfg.nginx.portName}
-            else if enabledExtraPorts ? ${cfg.nginx.portName} then
+            else if (enabledExtraPorts ? ${cfg.nginx.portName}) && enabledExtraPorts.${cfg.nginx.portName} != null then
               enabledExtraPorts.${cfg.nginx.portName}
             else
               null;

@@ -44,6 +44,7 @@ let
               enable = true;
               domain = "x-ui.example.com";
             };
+            ports.nodes.enable = false; # 测试：通过 enable = false 关闭单个预定义端口
           };
           app.proxy.s-ui = {
             enable = true;
@@ -52,6 +53,7 @@ let
               domain = "s-ui.example.com";
             };
             ports = {
+              subscription = null; # 测试：通过 null 关闭单个预定义端口
               nodes = {
                 start = 12000;
                 end = 12010;
@@ -59,6 +61,12 @@ let
               };
             };
             extraPorts = {
+              disabledPort = {
+                port = 7777;
+                enable = false;
+                firewall.open = true;
+              };
+              nullPort = null;
               apiTcp = {
                 port = 8888;
                 protocol = "tcp";
@@ -558,6 +566,14 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: s-ui extraPorts TCP 端口范围不应放行 UDP"
     exit 1
   fi
+  if [[ "${if builtins.elem 2096 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: s-ui 已被置为 null 的 subscription 端口不应在防火墙放行"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 7777 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "false" ]]; then
+    echo "错误: s-ui extraPorts 中 enable = false 的端口 7777 不应在防火墙放行"
+    exit 1
+  fi
 
   # 20. 验证 X-UI-YG 服务配置、容器定义及 Nginx 反代
   if [[ "${cfg.virtualisation.oci-containers.containers.x-ui-yg.image}" != "ghcr.io/shaogme/x-ui-yg-docker:alpine" ]]; then
@@ -586,6 +602,10 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${if cfg.services.nginx.virtualHosts ? "x-ui.example.com" then "true" else "false"}" != "true" ]]; then
     echo "错误: Nginx 未能正确生成 x-ui.example.com 虚拟主机配置"
+    exit 1
+  fi
+  if [[ "${if builtins.elem { from = 10000; to = 10100; } cfg.networking.firewall.allowedTCPPortRanges then "true" else "false"}" != "false" ]]; then
+    echo "错误: x-ui-yg 已设置 enable = false 的 nodes 端口范围不应在防火墙放行"
     exit 1
   fi
 
