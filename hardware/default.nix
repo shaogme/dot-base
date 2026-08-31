@@ -6,6 +6,7 @@ in
 {
   imports = [
     (import ./network args)
+    (import ./graphics args)
   ];
 
   options.base.hardware = {

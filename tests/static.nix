@@ -258,6 +258,54 @@ let
     ];
   };
   cfgPodman = evalPodman.config;
+
+  # 6. AMD 显卡桌面环境评估
+  evalAmdGraphics = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          hardware.graphics.amd.enable = true;
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgAmdGraphics = evalAmdGraphics.config;
+
+  # 7. NVIDIA 显卡与 PRIME 桌面环境评估
+  evalNvidiaGraphics = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          hardware.graphics.nvidia = {
+            enable = true;
+            open = true;
+            prime = {
+              offload.enable = true;
+              amdgpuBusId = "PCI:5:0:0";
+              nvidiaBusId = "PCI:1:0:0";
+            };
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgNvidiaGraphics = evalNvidiaGraphics.config;
 in
 pkgs.runCommand "static-check" { } ''
   echo "正在验证基础配置与网络模块测试覆盖..."
@@ -610,6 +658,74 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  echo "静态测试与多模式网络覆盖检查全部通过！"
+  # 21. 验证 AMD 显卡驱动、Xserver 自动开启、Early KMS、32 位支持与 ROCm OpenCL
+  if [[ "${if cfg.services.xserver.enable then "true" else "false"}" != "false" ]]; then
+    echo "错误: 未开启显卡/图形模块时 services.xserver.enable 应默认为 false"
+    exit 1
+  fi
+  if [[ "${if cfgAmdGraphics.services.xserver.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: AMD 显卡开启时应自动开启 services.xserver.enable"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "amdgpu" cfgAmdGraphics.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then
+    echo "错误: AMD 显卡配置应将 amdgpu 注入 services.xserver.videoDrivers"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "amdgpu" cfgAmdGraphics.boot.initrd.kernelModules then "true" else "false"}" != "true" ]]; then
+    echo "错误: AMD 显卡配置应在 boot.initrd.kernelModules 中加载 amdgpu"
+    exit 1
+  fi
+  if [[ "${if cfgAmdGraphics.hardware.graphics.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: AMD 显卡配置应自动启用 hardware.graphics.enable"
+    exit 1
+  fi
+  if [[ "${if cfgAmdGraphics.hardware.graphics.enable32Bit then "true" else "false"}" != "true" ]]; then
+    echo "错误: AMD 显卡配置应默认启用 hardware.graphics.enable32Bit"
+    exit 1
+  fi
+  if [[ "${if builtins.elem pkgs.rocmPackages.clr.icd cfgAmdGraphics.hardware.graphics.extraPackages then "true" else "false"}" != "true" ]]; then
+    echo "错误: AMD 显卡配置应在 extraPackages 中包含 rocmPackages.clr.icd"
+    exit 1
+  fi
+
+  # 22. 验证 NVIDIA 显卡驱动、Xserver 自动开启、modesetting、PRIME offload 与 VA-API 环境变量
+  if [[ "${if cfgNvidiaGraphics.services.xserver.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: NVIDIA 显卡开启时应自动开启 services.xserver.enable"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "nvidia" cfgNvidiaGraphics.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then
+    echo "错误: NVIDIA 显卡配置应将 nvidia 注入 services.xserver.videoDrivers"
+    exit 1
+  fi
+  if [[ "${if cfgNvidiaGraphics.hardware.nvidia.modesetting.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: NVIDIA 显卡配置应启用 modesetting"
+    exit 1
+  fi
+  if [[ "${if cfgNvidiaGraphics.hardware.nvidia.open then "true" else "false"}" != "true" ]]; then
+    echo "错误: NVIDIA 显卡配置应应用 open = true 设置"
+    exit 1
+  fi
+  if [[ "${if cfgNvidiaGraphics.hardware.nvidia.prime.offload.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: NVIDIA 显卡配置应启用 PRIME offload"
+    exit 1
+  fi
+  if [[ "${cfgNvidiaGraphics.hardware.nvidia.prime.amdgpuBusId}" != "PCI:5:0:0" ]]; then
+    echo "错误: NVIDIA 显卡配置未能正确设置 prime.amdgpuBusId"
+    exit 1
+  fi
+  if [[ "${cfgNvidiaGraphics.hardware.nvidia.prime.nvidiaBusId}" != "PCI:1:0:0" ]]; then
+    echo "错误: NVIDIA 显卡配置未能正确设置 prime.nvidiaBusId"
+    exit 1
+  fi
+  if [[ "${cfgNvidiaGraphics.environment.sessionVariables.LIBVA_DRIVER_NAME}" != "nvidia" ]]; then
+    echo "错误: NVIDIA 显卡配置未能注入 LIBVA_DRIVER_NAME = nvidia 环境变量"
+    exit 1
+  fi
+  if [[ "${cfgNvidiaGraphics.environment.sessionVariables.NVD_BACKEND}" != "direct" ]]; then
+    echo "错误: NVIDIA 显卡配置未能注入 NVD_BACKEND = direct 环境变量"
+    exit 1
+  fi
+
+  echo "静态测试与多模式网络/显卡覆盖检查全部通过！"
   touch $out
 ''
