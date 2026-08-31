@@ -21,11 +21,11 @@ let
       mkAliases = target: names: genAttrs names (_: mkAlias target);
 
       defaultPort = resolvedDef.port or resolvedDef.hostPort or null;
-      defaultInternalPort = resolvedDef.internalPort or resolvedDef.containerPort or defaultPort;
+      defaultContainerPort = resolvedDef.containerPort or resolvedDef.internalPort or defaultPort;
       defaultStart = resolvedDef.start or resolvedDef.from or resolvedDef.hostStart or resolvedDef.hostFrom or null;
       defaultEnd = resolvedDef.end or resolvedDef.to or resolvedDef.hostEnd or resolvedDef.hostTo or null;
-      defaultInternalStart = resolvedDef.internalStart or resolvedDef.internalFrom or resolvedDef.containerStart or resolvedDef.containerFrom or defaultStart;
-      defaultInternalEnd = resolvedDef.internalEnd or resolvedDef.internalTo or resolvedDef.containerEnd or resolvedDef.containerTo or defaultEnd;
+      defaultContainerStart = resolvedDef.containerStart or resolvedDef.internalStart or resolvedDef.containerFrom or resolvedDef.internalFrom or defaultStart;
+      defaultContainerEnd = resolvedDef.containerEnd or resolvedDef.internalEnd or resolvedDef.containerTo or resolvedDef.internalTo or defaultEnd;
       defaultFirewallOpen =
         if resolvedDef ? firewall && isAttrs resolvedDef.firewall && resolvedDef.firewall ? open then
           resolvedDef.firewall.open
@@ -41,11 +41,16 @@ let
         description = "Enable or disable ${name} port mapping.";
       };
       port = mkPortOpt defaultPort "Host port number";
-      internalPort = mkPortOpt defaultInternalPort "Container internal port number";
+      containerPort = mkPortOpt defaultContainerPort "Container internal port number";
       start = mkPortOpt defaultStart "Host start port for range";
       end = mkPortOpt defaultEnd "Host end port for range";
-      internalStart = mkPortOpt defaultInternalStart "Container start port for range";
-      internalEnd = mkPortOpt defaultInternalEnd "Container end port for range";
+      containerStart = mkPortOpt defaultContainerStart "Container start port for range";
+      containerEnd = mkPortOpt defaultContainerEnd "Container end port for range";
+      bindIp = mkOption {
+        type = types.str;
+        default = resolvedDef.bindIp or "";
+        description = "Host IP address to bind port mapping (e.g. '127.0.0.1').";
+      };
       protocol = mkOption {
         type = types.either (types.enum [ "both" "tcp" "udp" "tcp+udp" "all" ]) (types.listOf (types.enum [ "tcp" "udp" ]));
         default = resolvedDef.protocol or "both";
@@ -60,11 +65,51 @@ let
       };
     }
     // mkAliases "port" [ "hostPort" ]
-    // mkAliases "internalPort" [ "containerPort" ]
+    // mkAliases "containerPort" [ "internalPort" ]
     // mkAliases "start" [ "from" "hostStart" "hostFrom" ]
     // mkAliases "end" [ "to" "hostEnd" "hostTo" ]
-    // mkAliases "internalStart" [ "internalFrom" "containerStart" "containerFrom" ]
-    // mkAliases "internalEnd" [ "internalTo" "containerEnd" "containerTo" ];
+    // mkAliases "containerStart" [ "internalStart" "containerFrom" "internalFrom" ]
+    // mkAliases "containerEnd" [ "internalEnd" "containerTo" "internalTo" ];
+
+  # 容器网络配置子模块构造器
+  mkNetworkOptionDefs = { defaultMode ? "bridge" }: {
+    mode = mkOption {
+      type = types.enum [ "host" "bridge" "container" "custom" "none" ];
+      default = defaultMode;
+      description = "Container network mode ('host', 'bridge', 'container', 'custom', 'none').";
+    };
+
+    containerName = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Target container name when network mode is 'container'.";
+    };
+
+    customNetwork = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Custom network name when network mode is 'custom'.";
+    };
+
+    networks = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      description = "Additional networks to connect the container to.";
+    };
+
+    autoAddHostGateway = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Automatically add '--add-host=host.docker.internal:host-gateway' in non-host mode.";
+    };
+
+    extraOptions = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      description = "Extra network-related OCI flags.";
+    };
+  };
+
   proxyLib = import ./proxy-lib.nix { inherit lib; };
 in
 rec {
@@ -98,14 +143,14 @@ rec {
   # 规范化单条端口配置
   normalizePortItem = item:
     let
-      hPort = firstNonNull [ item.hostPort item.port ];
-      cPort = firstNonNull [ item.containerPort item.internalPort ];
+      hPort = firstNonNull [ item.port item.hostPort ];
+      cPort = firstNonNull [ item.containerPort item.internalPort hPort ];
 
-      hStart = firstNonNull [ item.hostStart item.hostFrom item.from item.start ];
-      hEnd = firstNonNull [ item.hostEnd item.hostTo item.to item.end ];
+      hStart = firstNonNull [ item.start item.from item.hostStart item.hostFrom ];
+      hEnd = firstNonNull [ item.end item.to item.hostEnd item.hostTo ];
 
-      cStart = firstNonNull [ item.containerStart item.containerFrom item.internalFrom item.internalStart ];
-      cEnd = firstNonNull [ item.containerEnd item.containerTo item.internalTo item.internalEnd ];
+      cStart = firstNonNull [ item.containerStart item.internalStart item.containerFrom item.internalFrom hStart ];
+      cEnd = firstNonNull [ item.containerEnd item.internalEnd item.containerTo item.internalTo hEnd ];
 
       p = item.protocol;
       hasTCP = if isList p then elem "tcp" p else elem p [ "both" "tcp" "tcp+udp" "all" ];
@@ -117,20 +162,21 @@ rec {
           item.firewall
         else
           false;
+      bindIp = if item ? bindIp && item.bindIp != null then item.bindIp else "";
     in
       if hStart != null && hEnd != null then {
         kind = "range";
-        from = hStart;
-        to = hEnd;
-        internalFrom = if cStart != null then cStart else hStart;
-        internalTo = if cEnd != null then cEnd else hEnd;
-        inherit hasTCP hasUDP;
+        start = hStart;
+        end = hEnd;
+        containerStart = if cStart != null then cStart else hStart;
+        containerEnd = if cEnd != null then cEnd else hEnd;
+        inherit hasTCP hasUDP bindIp;
         firewall = firewallOpen;
       } else if hPort != null then {
         kind = "port";
         port = hPort;
-        internalPort = if cPort != null then cPort else hPort;
-        inherit hasTCP hasUDP;
+        containerPort = if cPort != null then cPort else hPort;
+        inherit hasTCP hasUDP bindIp;
         firewall = firewallOpen;
       } else
         throw "Invalid port configuration in ports option";
@@ -141,8 +187,8 @@ rec {
     description ? name,
     optPath,
     image,
+    defaultNetworkMode ? "bridge", # "bridge" | "host" | "container" | "custom" | "none"
     ports ? {},
-    networkMode ? "bridge", # "bridge" | "host"
     includeProxy ? true,
     proxy ? {},
     dataDirs ? [ "/var/lib/${name}" ],
@@ -156,7 +202,11 @@ rec {
   { config, pkgs, lib, ... }:
   let
     cfg = getAttrFromPath optPath config;
-    isHostNetwork = networkMode == "host";
+
+    isHostNetwork = cfg.network.mode == "host";
+    isContainerNetwork = cfg.network.mode == "container";
+    isBridgeNetwork = cfg.network.mode == "bridge";
+    isCustomNetwork = cfg.network.mode == "custom";
 
     declaredPorts = if isAttrs ports then ports else {};
 
@@ -183,7 +233,7 @@ rec {
               null;
         in
           if targetPort != null then
-            (if targetPort.hostPort != null then targetPort.hostPort else targetPort.port)
+            (if targetPort.port != null then targetPort.port else targetPort.hostPort)
           else
             null
       else
@@ -199,20 +249,39 @@ rec {
     resolvedExtraContainerConfig = resolveVal extraContainerConfig;
     resolvedNginxExtraConfig = resolveVal cfg.nginx.extraConfig;
 
-    # 计算容器环境变量
+    # 计算自适应代理环境变量
+    effectiveAutoReplaceLoopback =
+      if (cfg ? proxy) && cfg.proxy.autoReplaceLoopback != null then
+        cfg.proxy.autoReplaceLoopback
+      else
+        !isHostNetwork;
+
     proxyEnv =
       if includeProxy && (cfg ? proxy) then
-        mkProxyEnv { proxyCfg = cfg.proxy; baseProxy = config.base.proxy; }
+        mkProxyEnv {
+          proxyCfg = cfg.proxy // { autoReplaceLoopback = effectiveAutoReplaceLoopback; };
+          baseProxy = config.base.proxy;
+        }
       else
         {};
 
     combinedEnv = resolvedEnv // proxyEnv;
 
     # 网络与端口相关配置
-    containerExtraOpts = (optional isHostNetwork "--network=host") ++ resolvedContainerExtraOptions;
+    networkOpts =
+      (optional isHostNetwork "--network=host")
+      ++ (optional isBridgeNetwork "--network=bridge")
+      ++ (optional isCustomNetwork "--network=${cfg.network.customNetwork}")
+      ++ (optional isContainerNetwork "--network=container:${cfg.network.containerName}")
+      ++ (optional (cfg.network.mode == "none") "--network=none")
+      ++ (map (net: "--network=${net}") cfg.network.networks)
+      ++ (optional (!isHostNetwork && cfg.network.autoAddHostGateway) "--add-host=host.docker.internal:host-gateway")
+      ++ cfg.network.extraOptions;
+
+    containerExtraOpts = networkOpts ++ resolvedContainerExtraOptions;
 
     containerPorts =
-      if isHostNetwork then
+      if isHostNetwork || isContainerNetwork then
         []
       else
         concatMap (item:
@@ -221,21 +290,26 @@ rec {
               if item.hasTCP && item.hasUDP then ""
               else if item.hasTCP then "/tcp"
               else "/udp";
+            bindPrefix =
+              if cfg.nginx.enable && item.kind == "port" && item.port == effectiveHostPort then
+                "127.0.0.1:"
+              else if item.bindIp != "" then
+                "${item.bindIp}:"
+              else
+                "";
           in
           if item.kind == "port" then
-            let
-              hostPrefix = if cfg.nginx.enable && item.port == effectiveHostPort then "127.0.0.1:" else "";
-              suffix = if cfg.nginx.enable && item.port == effectiveHostPort then "" else protoSuffix;
-            in
-              [ "${hostPrefix}${toString item.port}:${toString item.internalPort}${suffix}" ]
+            [ "${bindPrefix}${toString item.port}:${toString item.containerPort}${protoSuffix}" ]
           else
-            [ "${toString item.from}-${toString item.to}:${toString item.internalFrom}-${toString item.internalTo}${protoSuffix}" ]
+            [ "${bindPrefix}${toString item.start}-${toString item.end}:${toString item.containerStart}-${toString item.containerEnd}${protoSuffix}" ]
         ) normalizedPorts;
 
     firewallItems = filter (item: item.firewall) normalizedPorts;
   in {
     options = setAttrByPath optPath ({
       enable = mkEnableOption description;
+
+      network = mkNetworkOptionDefs { defaultMode = defaultNetworkMode; };
 
       ports = mapAttrs mkPredefinedPortOption declaredPorts;
 
@@ -293,7 +367,6 @@ rec {
     // (optionalAttrs includeProxy {
       proxy = mkProxyOptions ({
         inherit description;
-        autoReplaceLoopback = !isHostNetwork;
       } // proxy);
     })
     // extraOptions);
@@ -305,6 +378,14 @@ rec {
           {
             assertion = !cfg.nginx.enable || (effectiveHostPort != null);
             message = "Container '${name}' has nginx reverse proxy enabled, but effectiveHostPort could not be resolved. Please specify 'nginx.port' or a valid 'nginx.portName'.";
+          }
+          {
+            assertion = (cfg.network.mode != "container") || (cfg.network.containerName != null);
+            message = "Container '${name}' has network.mode set to 'container', but 'network.containerName' is not specified.";
+          }
+          {
+            assertion = (cfg.network.mode != "custom") || (cfg.network.customNetwork != null);
+            message = "Container '${name}' has network.mode set to 'custom', but 'network.customNetwork' is not specified.";
           }
         ];
 
@@ -335,8 +416,8 @@ rec {
         networking.firewall = {
           allowedTCPPorts = map (x: x.port) (filter (x: x.kind == "port" && x.hasTCP) firewallItems);
           allowedUDPPorts = map (x: x.port) (filter (x: x.kind == "port" && x.hasUDP) firewallItems);
-          allowedTCPPortRanges = map (x: { inherit (x) from to; }) (filter (x: x.kind == "range" && x.hasTCP) firewallItems);
-          allowedUDPPortRanges = map (x: { inherit (x) from to; }) (filter (x: x.kind == "range" && x.hasUDP) firewallItems);
+          allowedTCPPortRanges = map (x: { from = x.start; to = x.end; }) (filter (x: x.kind == "range" && x.hasTCP) firewallItems);
+          allowedUDPPortRanges = map (x: { from = x.start; to = x.end; }) (filter (x: x.kind == "range" && x.hasUDP) firewallItems);
         };
 
         systemd.tmpfiles.rules = map (dir: "d ${dir} 0755 root root -") resolvedDataDirs;

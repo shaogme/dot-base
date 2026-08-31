@@ -13,6 +13,9 @@ in
   # 静态评估检查
   static = import ./static.nix { inherit pkgs library; };
 
+  # 容器双网络/多网络配置评估测试
+  container-network = import ./container-network-test.nix { inherit pkgs; };
+
   # 虚拟机运行时测试
   vmtest = import ./vmtest.nix { inherit pkgs library; };
 

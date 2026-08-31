@@ -5,20 +5,30 @@ let
     description = "S-UI (Sing-box UI) Panel";
     optPath = [ "base" "app" "proxy" "s-ui" ];
     image = "docker.io/alireza7/s-ui:latest";
-    networkMode = "host";
+    defaultNetworkMode = "host";
     proxy = {
       defaultMode = "disable";
     };
     ports = {
       panel = {
         port = 2095;
+        containerPort = 2095;
+        protocol = "tcp";
+        firewall.open = true;
       };
       subscription = {
         port = 2096;
+        containerPort = 2096;
+        protocol = "tcp";
+        firewall.open = true;
       };
       nodes = {
         start = 10100;
         end = 10200;
+        containerStart = 10100;
+        containerEnd = 10200;
+        protocol = "both";
+        firewall.open = true;
       };
     };
     dataDirs = [

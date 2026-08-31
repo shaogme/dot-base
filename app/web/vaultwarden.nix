@@ -5,10 +5,11 @@ let
     description = "Vaultwarden Password Manager";
     optPath = [ "base" "app" "web" "vaultwarden" ];
     image = "docker.io/vaultwarden/server:latest";
+    defaultNetworkMode = "bridge";
     ports = {
       web = {
         port = 8000;
-        internalPort = 80;
+        containerPort = 80;
       };
     };
     volumes = [
