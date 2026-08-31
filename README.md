@@ -39,6 +39,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 ## 模块详解
 
 ### 1. 核心系统 (`core`)
+
 - **`base.enable`**: 基础环境初始化。包含以下配置：
   - 启用 Nix 实验性功能 (`nix-command`)。
   - 预装核心工具（如 `git`）。
@@ -82,9 +83,11 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
     - **`settings`**: TuneD 主守护进程配置（生成 `/etc/tuned/tuned-main.conf`）。
 
 ### 2. 内核调优 (`kernel`)
+
 - **`base.kernel.xanmod`**: 默认启用。切换至 XanMod 内核，开启 BBRv3，优化 TCP 窗口、缓冲区及文件描述符限制，显著提升网络连接速度与稳定性。
 
 ### 3. 应用服务 (`app`)
+
 - **Nginx (`base.app.web.nginx`)**: 自动处理端口开放、SSL 证书申请及续期，一键开启 HTTP/3。
 - **Hysteria (`base.app.proxy.hysteria`)**: 完整的容器化部署方案，支持端口跳跃（Port Hopping）和自动证书分发。
 - **X-UI-YG (`base.app.proxy.x-ui-yg`)**: 多协议代理管理面板，支持 Nginx 反代与端口范围放行。
@@ -92,6 +95,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 - **Web 应用**: 提供 OpenList、Vaultwarden 的一键反代接入，通过 `nginx = { enable = true; domain = "..."; }` 快速配置反向代理与证书。
 
 ### 4. 硬件、显卡与网络适配 (`hardware`)
+
 - **`base.hardware.network`**: 统一网络配置抽象模块，支持 `systemd-networkd`（默认）、`networkmanager` 及 `scripted`（NixOS 传统脚本模式）三大后端。支持多网卡的 DHCP、静态 IPv4/IPv6、自定义路由、MAC 地址克隆、MTU 设置以及针对特定后端的属性扩展（如 NetworkManager keyfile profiles 与 systemd-networkd linkConfig/networkConfig）。启用后会默认禁用 Facter 自动 DHCP，避免其生成的 networkd 配置覆盖显式接口配置。
 - **`base.hardware.graphics`**: 统一图形驱动与硬件加速抽象模块，专为桌面环境与工作站设计，分为 **AMD** 与 **NVIDIA** 两套完备配置：
   - **通用特性**：
@@ -117,6 +121,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这意味着你可以将其无缝集成到任何 NixOS 项目中，并自动使用你项目中指定的 `nixpkgs` 版本。
 
 ### 示例 1: VPS / 服务器环境
+
 在你的 NixOS 配置中引入此 Flake：
 
 ```nix

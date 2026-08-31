@@ -8,10 +8,10 @@ This directory contains the configuration for a Docker-based Linux development e
 - **Nix Support**: The environment uses Classic Nix with `npins` for reproducible builds.
 - **Windows Users**: You can run this setup directly from PowerShell or WSL2.
 
-
 ## 2. Start the Environment
 
 ### Option A: Development Mode (Recommended)
+
 Use this for active development. Your local source code is mounted into the container, allowing hot-reloading/live-editing.
 
 ```bash
@@ -19,6 +19,7 @@ docker-compose up -d --build dev
 ```
 
 ### Option B: Standalone Mode
+
 Use this to test the self-contained image. The source code is copied into the image at build time and is isolated from your local file system changes.
 
 ```bash
@@ -71,6 +72,6 @@ docker-compose run --rm dev bash
 
 - **Source Code**: The current directory is mounted to `/root/workspace` in the container. Changes propagate instantly.
 - **Port Mapping**:
-    - `2222` -> `22` (SSH)
-    - `8080`, `8081`, `9000` are mapped for your application availability.
+  - `2222` -> `22` (SSH)
+  - `8080`, `8081`, `9000` are mapped for your application availability.
 - **Tools**: Installed tools include `nix-ld`, `gdb`, `lldb`, `iproute2`, `tcpdump`.
