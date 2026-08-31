@@ -11,7 +11,7 @@ pkgs.testers.nixosTest {
       memory.mode = "aggressive";
       dns.smartdns.mode = "china";
       container.podman.enable = true;
-      performance.tuning.enable = true;
+      performance.tuning.profile = "vps";
     };
     
     # 虚拟机测试所需的最小硬件配置

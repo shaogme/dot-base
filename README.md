@@ -66,8 +66,20 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 - **`base.container`**: 容器后端配置。
   - **`docker`**: 支持 Rootless 模式、实验性功能，并优化了桥接网络转发性能。
   - **`podman`**: 提供 Docker 兼容模式，并预装 `podman-compose`。
-- **`base.performance.tuning`**: 基于 `tuned` 的系统调优。
-  - 默认启用 `virtual-guest` 配置文件，针对虚拟化环境（VPS）优化 CPU、I/O 及吞吐量。
+- **`base.performance.tuning`**: 基于 `tuned` 的系统性能调优模块。通过原生 `services.tuned` 配置体系实现，提供开箱即用的预设 Profile 并支持灵活透传底层配置。
+  - **`profile`**: 调优预设方案，支持：
+    - **`vps`**: 专为 VPS 和虚拟化环境优化。自动禁用 PPD（避免桌面电源管理和 UPower 开销），默认推荐 `virtual-guest` 配置文件（优化 I/O 调度与吞吐量）。
+    - **`desktop`**: 桌面平衡模式。自动启用 `ppdSupport`（对接 GNOME/KDE Plasma 等桌面环境的电源管理 API），默认使用 `balanced`（对应 `desktop` 配置文件）。
+    - **`desktop-performance`**: 桌面高性能模式。启用 `ppdSupport` 并默认设为 `performance`（对应 `throughput-performance` 配置文件），最大化 CPU 吞吐与响应能力。
+    - **`desktop-powersave`**: 桌面/笔记本节能模式。启用 `ppdSupport` 并默认设为 `power-saver`（对应 `desktop-powersave` 配置文件），最大化电池续航与控温。
+    - **`none`**: 默认值。不启用预设 profile。
+  - **底层配置透传**（支持直接覆盖或扩展 TuneD 原生属性）：
+    - **`package`**: 自定义 TuneD 软件包实例。
+    - **`ppdSupport`**: 显式开关 `power-profiles-daemon` 兼容支持。
+    - **`ppdSettings`**: 详细配置 PPD 映射表与默认行为。
+    - **`profiles`**: 自定义 TuneD 配置文件定义（生成 `/etc/tuned/profiles/<name>/tuned.conf`）。
+    - **`recommend`**: 自定义规则匹配（生成 `/etc/tuned/recommend.conf`）。
+    - **`settings`**: TuneD 主守护进程配置（生成 `/etc/tuned/tuned-main.conf`）。
 
 ### 2. 内核调优 (`kernel`)
 - **`base.kernel.xanmod`**: 默认启用。切换至 XanMod 内核，开启 BBRv3，优化 TCP 窗口、缓冲区及文件描述符限制，显著提升网络连接速度与稳定性。
@@ -126,6 +138,7 @@ Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这
         
         ({ ... }: {
           base.enable = true;
+          base.performance.tuning.profile = "vps"; # 针对 VPS 虚拟化环境调优
           base.memory.mode = "balanced";
           base.auth.root.authorizedKeys = [ "ssh-ed25519 AAA..." ];
           
@@ -162,6 +175,7 @@ Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这
         
         ({ ... }: {
           base.enable = true;
+          base.performance.tuning.profile = "desktop"; # 桌面平衡模式 (可选 desktop-performance / desktop-powersave)
           base.memory.mode = "conservative"; # 桌面大内存保守模式
           
           # --- AMD 显卡桌面配置 (二选一) ---

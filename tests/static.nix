@@ -104,7 +104,7 @@ let
               };
             };
           };
-          performance.tuning.enable = true;
+          performance.tuning.profile = "vps";
           update.enable = true;
           hardware.network = {
             enable = true;
@@ -306,6 +306,66 @@ let
     ];
   };
   cfgNvidiaGraphics = evalNvidiaGraphics.config;
+
+  # 8. Desktop 调优评估
+  evalDesktopTuning = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          performance.tuning.profile = "desktop";
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgDesktopTuning = evalDesktopTuning.config;
+
+  # 9. Desktop-Performance 调优评估
+  evalPerfTuning = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          performance.tuning.profile = "desktop-performance";
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgPerfTuning = evalPerfTuning.config;
+
+  # 10. Desktop-Powersave 调优评估
+  evalPowerTuning = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          performance.tuning.profile = "desktop-powersave";
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgPowerTuning = evalPowerTuning.config;
 in
 pkgs.runCommand "static-check" { } ''
   echo "正在验证基础配置与网络模块测试覆盖..."
@@ -360,9 +420,37 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 6. 验证性能调优
+  # 6. 验证性能调优 (VPS 模式及各桌面 Profile)
   if [[ "${if cfg.services.tuned.enable then "true" else "false"}" != "true" ]]; then
-    echo "错误: 应启用 Tuned 服务"
+    echo "错误: VPS 模式应启用 Tuned 服务"
+    exit 1
+  fi
+  if [[ "${if cfg.services.tuned.ppdSupport then "true" else "false"}" != "false" ]]; then
+    echo "错误: VPS 模式应禁用 ppdSupport"
+    exit 1
+  fi
+  if [[ "${if cfg.services.tuned.recommend ? "virtual-guest" then "true" else "false"}" != "true" ]]; then
+    echo "错误: VPS 模式应推荐 virtual-guest profile"
+    exit 1
+  fi
+  if [[ "${if cfgDesktopTuning.services.tuned.ppdSupport then "true" else "false"}" != "true" ]]; then
+    echo "错误: desktop 模式应启用 ppdSupport"
+    exit 1
+  fi
+  if [[ "${cfgDesktopTuning.services.tuned.ppdSettings.main.default}" != "balanced" ]]; then
+    echo "错误: desktop 模式默认 PPD profile 应为 balanced"
+    exit 1
+  fi
+  if [[ "${if cfgDesktopTuning.services.tuned.recommend ? desktop then "true" else "false"}" != "true" ]]; then
+    echo "错误: desktop 模式应推荐 desktop profile"
+    exit 1
+  fi
+  if [[ "${cfgPerfTuning.services.tuned.ppdSettings.main.default}" != "performance" ]]; then
+    echo "错误: desktop-performance 模式默认 PPD profile 应为 performance"
+    exit 1
+  fi
+  if [[ "${cfgPowerTuning.services.tuned.ppdSettings.main.default}" != "power-saver" ]]; then
+    echo "错误: desktop-powersave 模式默认 PPD profile 应为 power-saver"
     exit 1
   fi
 
