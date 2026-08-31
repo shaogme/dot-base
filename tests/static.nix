@@ -46,6 +46,13 @@ let
             };
             ports.nodes.enable = false; # 测试：通过 enable = false 关闭单个预定义端口
           };
+          app.proxy.v2raya = {
+            enable = true;
+            nginx = {
+              enable = true;
+              domain = "v2raya.example.com";
+            };
+          };
           app.proxy.s-ui = {
             enable = true;
             proxy.mode = "auto";
@@ -746,7 +753,49 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 21. 验证 AMD 显卡驱动、Xserver 自动开启、Early KMS、32 位支持与 ROCm OpenCL
+  # 21. 验证 v2rayA 服务配置、容器定义、持久化路径及 host 模式
+  if [[ "${if cfg.virtualisation.oci-containers.containers ? v2raya then "true" else "false"}" != "true" ]]; then
+    echo "错误: 应包含 v2raya 容器配置"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.v2raya.image}" != "docker.io/mzz2017/v2raya:latest" ]]; then
+    echo "错误: v2raya 容器镜像不符合预期"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "--network=host" cfg.virtualisation.oci-containers.containers.v2raya.extraOptions then "true" else "false"}" != "true" ]]; then
+    echo "错误: v2raya 容器应使用 --network=host 网络模式"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "--privileged" cfg.virtualisation.oci-containers.containers.v2raya.extraOptions then "true" else "false"}" != "true" ]]; then
+    echo "错误: v2raya 容器应包含 --privileged 选项"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "/var/lib/v2raya:/etc/v2raya" cfg.virtualisation.oci-containers.containers.v2raya.volumes then "true" else "false"}" != "true" ]]; then
+    echo "错误: v2raya 容器持久化挂载路径不符合预期 (/var/lib/v2raya:/etc/v2raya)"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "/etc/resolv.conf:/etc/resolv.conf" cfg.virtualisation.oci-containers.containers.v2raya.volumes then "true" else "false"}" != "true" ]]; then
+    echo "错误: v2raya 容器 resolv.conf 挂载路径不符合预期 (/etc/resolv.conf:/etc/resolv.conf)"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.v2raya.environment.http_proxy}" != "" ]]; then
+    echo "错误: v2raya 默认应禁用代理 (http_proxy 应为空)"
+    exit 1
+  fi
+  if [[ "${cfg.virtualisation.oci-containers.containers.v2raya.environment.ALL_PROXY}" != "" ]]; then
+    echo "错误: v2raya 默认应禁用代理 (ALL_PROXY 应为空)"
+    exit 1
+  fi
+  if [[ "${if cfg.services.nginx.virtualHosts ? "v2raya.example.com" then "true" else "false"}" != "true" ]]; then
+    echo "错误: Nginx 未能正确生成 v2raya.example.com 虚拟主机配置"
+    exit 1
+  fi
+  if [[ "${if builtins.elem 2017 cfg.networking.firewall.allowedTCPPorts then "true" else "false"}" != "true" ]]; then
+    echo "错误: v2raya 面板端口 2017 应在防火墙放行"
+    exit 1
+  fi
+
+  # 22. 验证 AMD 显卡驱动、Xserver 自动开启、Early KMS、32 位支持与 ROCm OpenCL
   if [[ "${if cfg.services.xserver.enable then "true" else "false"}" != "false" ]]; then
     echo "错误: 未开启显卡/图形模块时 services.xserver.enable 应默认为 false"
     exit 1
