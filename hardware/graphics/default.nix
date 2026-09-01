@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, options, ... }:
 
 with lib;
 
@@ -294,10 +294,6 @@ in
         primeRunPkg
       ];
 
-      nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
-        "nvidia-x11"
-        "nvidia-settings"
-      ];
     })
 
     # 4. 拓扑与合法性断言
