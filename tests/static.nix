@@ -274,7 +274,7 @@ let
       {
         base = {
           enable = true;
-          hardware.graphics.amd.enable = true;
+          hardware.graphics.mode = "amd";
         };
         boot.loader.grub.enable = false;
         fileSystems."/" = {
@@ -286,7 +286,7 @@ let
   };
   cfgAmdGraphics = evalAmdGraphics.config;
 
-  # 7. NVIDIA 显卡与 PRIME 桌面环境评估
+  # 7. NVIDIA 显卡桌面环境评估
   evalNvidiaGraphics = import (pkgs.path + "/nixos/lib/eval-config.nix") {
     modules = [
       { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
@@ -294,14 +294,9 @@ let
       {
         base = {
           enable = true;
-          hardware.graphics.nvidia = {
-            enable = true;
-            open = true;
-            prime = {
-              offload.enable = true;
-              amdgpuBusId = "PCI:5:0:0";
-              nvidiaBusId = "PCI:1:0:0";
-            };
+          hardware.graphics = {
+            mode = "nvidia";
+            nvidia.open = true;
           };
         };
         boot.loader.grub.enable = false;
@@ -313,6 +308,59 @@ let
     ];
   };
   cfgNvidiaGraphics = evalNvidiaGraphics.config;
+
+  # 7.1 AMD + NVIDIA 混合双显卡 PRIME Offload 模式评估
+  evalHybridOffload = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          hardware.graphics = {
+            mode = "hybrid-amd-nvidia";
+            hybrid = {
+              strategy = "offload";
+              integratedBusId = "PCI:5:0:0";
+              discreteBusId = "PCI:1:0:0";
+            };
+            nvidia.open = true;
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgHybridOffload = evalHybridOffload.config;
+
+  # 7.2 AMD + NVIDIA 混合双显卡 Compute-Only 模式评估
+  evalHybridCompute = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          hardware.graphics = {
+            mode = "hybrid-amd-nvidia";
+            hybrid = {
+              strategy = "compute-only";
+            };
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgHybridCompute = evalHybridCompute.config;
 
   # 8. Desktop 调优评估
   evalDesktopTuning = import (pkgs.path + "/nixos/lib/eval-config.nix") {
@@ -824,8 +872,12 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: AMD 显卡配置应在 extraPackages 中包含 rocmPackages.clr.icd"
     exit 1
   fi
+  if [[ "${if cfgAmdGraphics.environment.sessionVariables ? LIBVA_DRIVER_NAME then "true" else "false"}" == "true" ]]; then
+    echo "错误: AMD 显卡配置不应存在 LIBVA_DRIVER_NAME 全局污染"
+    exit 1
+  fi
 
-  # 22. 验证 NVIDIA 显卡驱动、modesetting、PRIME offload 与 VA-API 环境变量（不应隐式开启 Xserver）
+  # 23. 验证 NVIDIA 纯独显驱动、modesetting 与 VA-API 环境变量（纯 N 卡模式下注入）
   if [[ "${if cfgNvidiaGraphics.services.xserver.enable then "true" else "false"}" != "false" ]]; then
     echo "错误: NVIDIA 显卡开启时不应隐式开启 services.xserver.enable"
     exit 1
@@ -842,24 +894,64 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: NVIDIA 显卡配置应应用 open = true 设置"
     exit 1
   fi
-  if [[ "${if cfgNvidiaGraphics.hardware.nvidia.prime.offload.enable then "true" else "false"}" != "true" ]]; then
-    echo "错误: NVIDIA 显卡配置应启用 PRIME offload"
-    exit 1
-  fi
-  if [[ "${cfgNvidiaGraphics.hardware.nvidia.prime.amdgpuBusId}" != "PCI:5:0:0" ]]; then
-    echo "错误: NVIDIA 显卡配置未能正确设置 prime.amdgpuBusId"
-    exit 1
-  fi
-  if [[ "${cfgNvidiaGraphics.hardware.nvidia.prime.nvidiaBusId}" != "PCI:1:0:0" ]]; then
-    echo "错误: NVIDIA 显卡配置未能正确设置 prime.nvidiaBusId"
-    exit 1
-  fi
   if [[ "${cfgNvidiaGraphics.environment.sessionVariables.LIBVA_DRIVER_NAME}" != "nvidia" ]]; then
-    echo "错误: NVIDIA 显卡配置未能注入 LIBVA_DRIVER_NAME = nvidia 环境变量"
+    echo "错误: 纯 NVIDIA 显卡配置未能注入 LIBVA_DRIVER_NAME = nvidia 环境变量"
     exit 1
   fi
   if [[ "${cfgNvidiaGraphics.environment.sessionVariables.NVD_BACKEND}" != "direct" ]]; then
-    echo "错误: NVIDIA 显卡配置未能注入 NVD_BACKEND = direct 环境变量"
+    echo "错误: 纯 NVIDIA 显卡配置未能注入 NVD_BACKEND = direct 环境变量"
+    exit 1
+  fi
+
+  # 24. 验证 AMD + NVIDIA 混合双显卡 PRIME Offload 模式 (核心重构测试)
+  if [[ "${if builtins.elem "amdgpu" cfgHybridOffload.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Offload 模式应将 amdgpu 注入 videoDrivers"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "nvidia" cfgHybridOffload.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Offload 模式应将 nvidia 注入 videoDrivers"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "amdgpu" cfgHybridOffload.boot.initrd.kernelModules then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Offload 模式应在 initrd 中加载 amdgpu (Early KMS)"
+    exit 1
+  fi
+  if [[ "${if cfgHybridOffload.hardware.nvidia.prime.offload.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Offload 模式应启用 PRIME offload"
+    exit 1
+  fi
+  if [[ "${cfgHybridOffload.hardware.nvidia.prime.amdgpuBusId}" != "PCI:5:0:0" ]]; then
+    echo "错误: Hybrid Offload 模式未能正确配置 prime.amdgpuBusId"
+    exit 1
+  fi
+  if [[ "${cfgHybridOffload.hardware.nvidia.prime.nvidiaBusId}" != "PCI:1:0:0" ]]; then
+    echo "错误: Hybrid Offload 模式未能正确配置 prime.nvidiaBusId"
+    exit 1
+  fi
+  if [[ "${if cfgHybridOffload.hardware.nvidia.powerManagement.finegrained then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Offload 模式应默认开启 finegrained 动态电源管理"
+    exit 1
+  fi
+  if [[ "${if cfgHybridOffload.environment.sessionVariables ? LIBVA_DRIVER_NAME then "true" else "false"}" == "true" ]]; then
+    echo "错误: Hybrid Offload 模式绝不应向全局 sessionVariables 注入 LIBVA_DRIVER_NAME 污染"
+    exit 1
+  fi
+  if [[ "${if builtins.any (p: p.name == "nvidia-offload" || (p.pname or "") == "nvidia-offload") cfgHybridOffload.environment.systemPackages then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Offload 模式应在 systemPackages 中注入 nvidia-offload 包装命令"
+    exit 1
+  fi
+
+  # 25. 验证 AMD + NVIDIA 混合双显卡 Compute-Only 模式
+  if [[ "${if builtins.elem "amdgpu" cfgHybridCompute.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Compute 模式应将 amdgpu 注入 videoDrivers"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "nvidia" cfgHybridCompute.services.xserver.videoDrivers then "true" else "false"}" != "false" ]]; then
+    echo "错误: Hybrid Compute 模式不应将 nvidia 注入 videoDrivers (不参与显示)"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "nvidia_uvm" cfgHybridCompute.boot.kernelModules then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hybrid Compute 模式应在 boot.kernelModules 中加载 nvidia_uvm 算力模块"
     exit 1
   fi
 

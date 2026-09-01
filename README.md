@@ -98,24 +98,22 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 ### 4. 硬件、显卡与网络适配 (`hardware`)
 
 - **`base.hardware.network`**: 统一网络配置抽象模块，支持 `systemd-networkd`（默认）、`networkmanager` 及 `scripted`（NixOS 传统脚本模式）三大后端。支持多网卡的 DHCP、静态 IPv4/IPv6、自定义路由、MAC 地址克隆、MTU 设置以及针对特定后端的属性扩展（如 NetworkManager keyfile profiles 与 systemd-networkd linkConfig/networkConfig）。启用后会默认禁用 Facter 自动 DHCP，避免其生成的 networkd 配置覆盖显式接口配置。
-- **`base.hardware.graphics`**: 统一图形驱动与硬件加速抽象模块，专为桌面环境与工作站设计，分为 **AMD** 与 **NVIDIA** 两套完备配置：
+- **`base.hardware.graphics`**: 统一图形驱动与硬件加速抽象模块，基于**拓扑驱动架构 (Topology-Driven)** 设计，完美支持单显卡与多显卡混合协同：
   - **通用特性**：
-    - **`enable`**: 图形硬件加速总开关（当 `amd.enable` 或 `nvidia.enable` 为 true 时自动联动启用）。
+    - **`mode`**: 图形硬件拓扑模式，支持 `"amd"`（纯 AMD 卡）、`"nvidia"`（纯 NVIDIA 独显）、`"hybrid-amd-nvidia"`（AMD 核显 + NVIDIA 独显笔记本）、`"hybrid-intel-nvidia"`（Intel 核显 + NVIDIA 独显笔记本）及 `"custom"`。
     - **`enable32Bit`**: 默认启用 32 位 OpenGL/Vulkan/VA-API 加速库，保障 Steam、Wine 及 32 位程序开箱即用。
-  - **AMD 显卡 (`base.hardware.graphics.amd`)**:
-    - **`enable`**: 一键启用 AMD 开源驱动栈（`amdgpu`、Mesa RADV、Vulkan）。
-    - **`initrd.enable`**: 默认在 initrd 阶段加载 `amdgpu` 模块（Early KMS），消除启动画面闪烁与撕裂。
-    - **`opencl.enable`**: 默认启用 ROCm / OpenCL ICD 计算运行时（`rocmPackages.clr.icd`），加速 Blender、DaVinci Resolve 等生产力软件。
-    - 预置 `libva-vdpau-driver` 与 `libvdpau-va-gl`，提供全面的 VA-API / VDPAU 视频硬解。
-  - **NVIDIA 显卡 (`base.hardware.graphics.nvidia`)**:
-    - **`enable`**: 启用 NVIDIA 专有/开源驱动栈，自动注入专有驱动 unfree 许可过滤。
-    - **`modesetting.enable`**: 默认启用 modesetting（Wayland 合成器如 Hyprland、Sway、GNOME、KDE Plasma 必需）。
+  - **混合双显卡子系统 (`hybrid`)**：
+    - **`strategy`**: 支持 `"offload"`（PRIME 渲染卸载，默认）、`"sync"`（独显同步直连）与 `"compute-only"`（纯 CUDA/AI 算力模式，NVIDIA 独显不参与桌面显示与显存占用）。
+    - **`integratedBusId` / `discreteBusId`**: 显式声明集显与独显的 PCI Bus ID（如 `"PCI:5:0:0"` 与 `"PCI:1:0:0"`）。
+    - **精细化动态电源管理 (`powerManagement.dynamicD3`)**: 在 offload 模式下默认自动开启 Turing+ 架构的 Runtime D3cold 深度休眠（0W 待机功耗）。
+    - **零污染 VA-API 隔离与增强包装器**: 彻底解决双显卡笔记本全局 VA-API 污染问题。日常桌面在核显上享有原生超低功耗硬件硬解，独显加速通过内置的 `nvidia-offload` / `prime-run` 包装器按需局部注入。
+  - **AMD 显卡微调 (`base.hardware.graphics.amd`)**:
+    - **`initrd`**: 默认在 initrd 阶段加载 `amdgpu` 模块（Early KMS），消除启动画面闪烁。
+    - **`opencl`**: 默认启用 ROCm / OpenCL ICD 计算运行时（`rocmPackages.clr.icd`），加速 Blender、DaVinci Resolve 等生产力软件。
+  - **NVIDIA 显卡微调 (`base.hardware.graphics.nvidia`)**:
     - **`open`**: 可选切换为 NVIDIA 官方开源内核模块（`nvidia-open`，推荐 Turing RTX 20 系列及以上架构开启）。
-    - **`powerManagement`**: 提供 `enable`（基础电源管理/挂起恢复）与 `finegrained`（精细化动态电源管理，空闲彻底关断独显）。
-    - **`nvidiaSettings`**: 默认构建并安装 `nvidia-settings` 图形化控制面板。
-    - **`vaapi.enable`**: 默认集成 `nvidia-vaapi-driver` 并注入 Direct 模式环境变量（`LIBVA_DRIVER_NAME = "nvidia"`, `NVD_BACKEND = "direct"`），大幅优化浏览器与媒体播放器视频硬解。
+    - **`modesetting.enable`**: 默认启用 modesetting（Wayland 合成器必需）。
     - **`package`**: 支持自定义指定特定版本或分支的 NVIDIA 驱动包。
-    - **`prime`**: 专为双显卡笔记本设计，支持 `offload`（渲染卸载/按需调用独显）与 `sync`（独显同步直连）两种模式，支持便捷指定 `intelBusId` / `amdgpuBusId` / `nvidiaBusId`。
 
 ## 快速开始
 
@@ -184,18 +182,24 @@ Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这
           base.performance.tuning.profile = "desktop"; # 桌面平衡模式 (可选 desktop-performance / desktop-powersave)
           base.memory.mode = "conservative"; # 桌面大内存保守模式
           
-          # --- AMD 显卡桌面配置 (二选一) ---
-          base.hardware.graphics.amd.enable = true;
+          # --- AMD 显卡桌面配置 (模式一) ---
+          base.hardware.graphics.mode = "amd";
           
-          # --- NVIDIA 显卡 / 双显卡笔记本配置 (二选一) ---
-          # base.hardware.graphics.nvidia = {
-          #   enable = true;
-          #   open = true; # RTX 20 系列及以上架构推荐
-          #   prime = {
-          #     offload.enable = true; # 开启双显卡按需渲染
-          #     amdgpuBusId = "PCI:5:0:0";
-          #     nvidiaBusId = "PCI:1:0:0";
+          # --- NVIDIA 显卡桌面配置 (模式二) ---
+          # base.hardware.graphics = {
+          #   mode = "nvidia";
+          #   nvidia.open = true;
+          # };
+
+          # --- AMD 核显 + NVIDIA 独显双显卡笔记本配置 (模式三) ---
+          # base.hardware.graphics = {
+          #   mode = "hybrid-amd-nvidia";
+          #   hybrid = {
+          #     strategy = "offload"; # 开启双显卡按需渲染与动态电源管理
+          #     integratedBusId = "PCI:5:0:0";
+          #     discreteBusId = "PCI:1:0:0";
           #   };
+          #   nvidia.open = true; # RTX 20 系列及以上架构推荐
           # };
         })
       ];
