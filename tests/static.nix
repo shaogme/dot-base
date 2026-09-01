@@ -746,13 +746,13 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 21. 验证 AMD 显卡驱动、Xserver 自动开启、Early KMS、32 位支持与 ROCm OpenCL
+  # 21. 验证 AMD 显卡驱动、Early KMS、32 位支持与 ROCm OpenCL（不应隐式开启 Xserver）
   if [[ "${if cfg.services.xserver.enable then "true" else "false"}" != "false" ]]; then
     echo "错误: 未开启显卡/图形模块时 services.xserver.enable 应默认为 false"
     exit 1
   fi
-  if [[ "${if cfgAmdGraphics.services.xserver.enable then "true" else "false"}" != "true" ]]; then
-    echo "错误: AMD 显卡开启时应自动开启 services.xserver.enable"
+  if [[ "${if cfgAmdGraphics.services.xserver.enable then "true" else "false"}" != "false" ]]; then
+    echo "错误: AMD 显卡开启时不应隐式开启 services.xserver.enable"
     exit 1
   fi
   if [[ "${if builtins.elem "amdgpu" cfgAmdGraphics.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then
@@ -776,9 +776,9 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 22. 验证 NVIDIA 显卡驱动、Xserver 自动开启、modesetting、PRIME offload 与 VA-API 环境变量
-  if [[ "${if cfgNvidiaGraphics.services.xserver.enable then "true" else "false"}" != "true" ]]; then
-    echo "错误: NVIDIA 显卡开启时应自动开启 services.xserver.enable"
+  # 22. 验证 NVIDIA 显卡驱动、modesetting、PRIME offload 与 VA-API 环境变量（不应隐式开启 Xserver）
+  if [[ "${if cfgNvidiaGraphics.services.xserver.enable then "true" else "false"}" != "false" ]]; then
+    echo "错误: NVIDIA 显卡开启时不应隐式开启 services.xserver.enable"
     exit 1
   fi
   if [[ "${if builtins.elem "nvidia" cfgNvidiaGraphics.services.xserver.videoDrivers then "true" else "false"}" != "true" ]]; then

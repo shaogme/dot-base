@@ -154,7 +154,6 @@ in
 
   config = mkIf (cfg.enable && !(config.base.testMode or false)) (mkMerge [
     {
-      services.xserver.enable = mkDefault true;
       hardware.graphics = {
         enable = true;
         enable32Bit = cfg.enable32Bit;
