@@ -5,17 +5,24 @@ let
     description = "X-UI-YG Panel";
     optPath = [ "base" "app" "proxy" "x-ui-yg" ];
     image = "ghcr.io/shaogme/x-ui-yg-docker:alpine";
-    networkMode = "host";
+    defaultNetworkMode = "host";
     proxy = {
       defaultMode = "disable";
     };
     ports = {
       panel = {
         port = 54321;
+        containerPort = 54321;
+        protocol = "tcp";
+        firewall.open = true;
       };
       nodes = {
         start = 10000;
         end = 10100;
+        containerStart = 10000;
+        containerEnd = 10100;
+        protocol = "both";
+        firewall.open = true;
       };
     };
     extraOptions = {

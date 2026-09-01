@@ -5,9 +5,11 @@ let
     description = "OpenList File Listing";
     optPath = [ "base" "app" "web" "openlist" ];
     image = "docker.io/openlistteam/openlist:latest";
+    defaultNetworkMode = "bridge";
     ports = {
       web = {
         port = 5244;
+        containerPort = 5244;
       };
     };
     volumes = [

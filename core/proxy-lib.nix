@@ -24,7 +24,7 @@ rec {
     description ? "service",
     defaultMode ? "auto",
     mode ? defaultMode,
-    autoReplaceLoopback ? true,
+    autoReplaceLoopback ? null,
     hostDomain ? "host.docker.internal",
   }:
     let
@@ -54,9 +54,9 @@ rec {
       };
 
       autoReplaceLoopback = mkOption {
-        type = types.bool;
+        type = types.nullOr types.bool;
         default = autoReplaceLoopback;
-        description = "Automatically replace 127.0.0.1 and localhost in proxy URLs with hostDomain.";
+        description = "Automatically replace 127.0.0.1 and localhost in proxy URLs with hostDomain. If null, automatically derived from container network mode (false for host, true for non-host).";
       };
 
       hostDomain = mkOption {
@@ -68,6 +68,9 @@ rec {
 
   # 统一代理环境变量解析函数
   resolveProxyEnv = { proxyCfg, baseProxy }:
+    let
+      isAutoReplace = proxyCfg.autoReplaceLoopback == true;
+    in
     if proxyCfg.mode == "disable" then
       emptyProxyEnv
     else if proxyCfg.mode == "auto" then
@@ -76,7 +79,7 @@ rec {
           doReplace = url: replaceLoopback {
             inherit url;
             inherit (proxyCfg) hostDomain;
-            enable = proxyCfg.autoReplaceLoopback;
+            enable = isAutoReplace;
           };
 
           httpP = doReplace baseProxy.httpProxy;
@@ -101,7 +104,7 @@ rec {
         doReplace = url: replaceLoopback {
           inherit url;
           inherit (proxyCfg) hostDomain;
-          enable = proxyCfg.autoReplaceLoopback;
+          enable = isAutoReplace;
         };
 
         resolveUrl = key: doReplace (
