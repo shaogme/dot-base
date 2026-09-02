@@ -59,11 +59,14 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
   - **`oversea` 模式**: 针对海外 VPS。使用主流公共 DNS Over TLS (DoT) 以确保安全。
   - **`china` 模式**: 国内外分流。国内域名（如百度、阿里、苹果等）走本地解析，其余走加密 DNS。
   - **`unlock` 配置**: 支持自定义解锁服务器与指定域名的分流解析。
-- **`base.update`**: 自动化维护体系。
-  - **`sync`**: 自动从远程仓库同步配置。支持 `destructive` 模式（强制 hard reset）以确保环境一致性。
-  - **`upgrade`**: 定时执行系统升级（`nixos-rebuild`），支持 Flake 自动路径推断与随机延迟。
-  - **`gc`**: 定期清理旧版本，释放存储空间。
-  - **`host`**: 显式指定 Flake 宿主名，简化跨机器配置同步。
+- **`base.update`**: 自动化运维与系统更新子系统。
+  - **单次更新 CLI (`dot-update`)**: 内置系统级维护命令 `dot-update`（支持别名 `base-update` 与 `nixos-update`），一键执行当前系统的构建与切换。
+  - **安全可控的 Pull 策略**: 默认**不拉取远程 Git**（仅构建本地工作区修改），方便本地配置调试；通过 `--pull`（或 `-p`）可在更新前自动同步远程最新代码。
+  - **定时任务与服务解耦**: `upgrade.enable` 仅控制是否启用每日定时自动升级（Systemd Timer）。关闭定时器（设为 `false`）**完全不影响**随时运行 `dot-update` 或手动调用升级服务。
+  - **Git 仓库同步 (`sync`)**: 支持自动与远程 Git 仓库同步配置。支持 `destructive` 模式（`git reset --hard` 与 `clean`）以确保环境与远端严格一致。
+  - **内核感知与自动重启**: 构建完成后自动比对运行中内核与新内核，支持提示或在配置 `allowReboot = true` 时自动重启。
+  - **自动垃圾回收 (`gc`)**: 定期清理旧 Generation 并自动优化 Store 存储空间。
+  - **Flake 宿主推断 (`host` / `path`)**: 自动推断 Flake URI 与 Legacy 配置文件路径。
 - **`base.container`**: 容器后端配置。
   - **`docker`**: 支持 Rootless 模式、实验性功能，并优化了桥接网络转发性能。
   - **`podman`**: 提供 Docker 兼容模式，并预装 `podman-compose`。
@@ -206,6 +209,69 @@ Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这
     };
   };
 }
+```
+
+### 示例 3: 自动化维护与系统更新配置 (`base.update`)
+
+`base.update` 模块提供了一体化的 Git 配置同步、系统构建切换（Rebuild）与存储垃圾回收（GC）体系：
+
+```nix
+base.update = {
+  enable = true;          # 启用更新子系统（生成 CLI 工具与系统升级服务）
+  host = "my-host";       # 指定主机名（默认读取 networking.hostName）
+  path = "hosts/my-host"; # 仓库中该主机的子路径（可选）
+
+  # 1. Git 同步配置
+  sync = {
+    enable = true;
+    url = "https://github.com/your-name/your-dotfiles";
+    branch = "main";
+    targetPath = "/etc/nixos";
+    destructive = true;   # 是否在 pull 时使用 reset --hard 保持与远程严格一致
+  };
+
+  # 2. 系统升级与定时任务
+  upgrade = {
+    enable = false;           # 是否开启定时自动升级（设为 false 不影响 dot-update 命令手动执行）
+    type = "flake";           # 升级模式：flake 或 legacy
+    pullBeforeUpdate = false; # 默认是否在更新前拉取远程（默认 false）
+    dates = "04:00";          # 自动更新触发时间
+    allowReboot = true;       # 内核更新后是否允许自动重启
+  };
+
+  # 3. 垃圾回收
+  gc = {
+    enable = true;
+    dates = "weekly";
+    olderThan = "7d";
+  };
+};
+```
+
+#### CLI 更新命令速查 (`dot-update`)
+
+系统提供 `dot-update`（同时包含 `base-update` 与 `nixos-update` 别名）命令行工具：
+
+```bash
+# 1. 基础单次更新（使用当前本地配置直接 rebuild switch，不拉取远程）
+dot-update
+
+# 2. 更新前先从远程 Git 拉取最新提交
+dot-update --pull
+# 或使用简写
+dot-update -p
+
+# 3. 仅构建为下次启动项（不立即切换当前运行系统）
+dot-update --boot
+
+# 4. 临时测试构建（不写入 bootloader 启动项）
+dot-update --test
+
+# 5. 仅同步 Git 仓库，不执行系统构建
+dot-update --sync-only
+
+# 6. 委托给后台 systemd 服务运行并实时查看日志
+dot-update --service
 ```
 
 ## 进阶用法：显式注入特定 pkgs

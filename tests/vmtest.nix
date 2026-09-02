@@ -12,6 +12,7 @@ pkgs.testers.nixosTest {
       dns.smartdns.mode = "china";
       container.podman.enable = true;
       performance.tuning.profile = "vps";
+      update.enable = true;
     };
     
     # 虚拟机测试所需的最小硬件配置
@@ -52,6 +53,14 @@ pkgs.testers.nixosTest {
     # 9. 检查时区
     output = machine.succeed("date +%Z")
     assert "CST" in output or "UTC" in output
+
+    # 10. 检查更新子系统 (CLI 工具与升级服务)
+    help_output = machine.succeed("dot-update --help")
+    assert "Usage: dot-update" in help_output
+    assert "Default Pull:       No" in help_output
+    machine.succeed("base-update --help")
+    machine.succeed("nixos-update --help")
+    machine.succeed("systemctl status base-upgrade.service")
   '';
 }
 

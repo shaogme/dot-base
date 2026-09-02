@@ -421,6 +421,29 @@ let
     ];
   };
   cfgPowerTuning = evalPowerTuning.config;
+
+  # 13. 系统自动更新定时器启用模式
+  evalScheduledUpgrade = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          update = {
+            enable = true;
+            upgrade.enable = true;
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgScheduledUpgrade = evalScheduledUpgrade.config;
 in
 pkgs.runCommand "static-check" { } ''
   echo "正在验证基础配置与网络模块测试覆盖..."
@@ -509,9 +532,21 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 7. 验证自动更新
-  if [[ "${if cfg.system.autoUpgrade.enable then "true" else "false"}" != "true" ]]; then
-    echo "错误: 应启用系统自动升级"
+  # 7. 验证更新子系统
+  if [[ "${if cfg.systemd.services ? base-upgrade then "true" else "false"}" != "true" ]]; then
+    echo "错误: update.enable 启用后应始终定义 base-upgrade.service"
+    exit 1
+  fi
+  if [[ "${if cfg.systemd.timers ? base-upgrade then "true" else "false"}" != "false" ]]; then
+    echo "错误: upgrade.enable = false 时不应激活 base-upgrade.timer"
+    exit 1
+  fi
+  if [[ "${if cfgScheduledUpgrade.systemd.timers ? base-upgrade then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.enable = true 时应激活 base-upgrade.timer"
+    exit 1
+  fi
+  if [[ "${if builtins.any (p: p.name == "dot-update-cli" || (p.pname or "") == "dot-update-cli") cfg.environment.systemPackages then "true" else "false"}" != "true" ]]; then
+    echo "错误: update.enable 启用后应向 systemPackages 注入 dot-update CLI 命令"
     exit 1
   fi
   if [[ "${if cfg.nix.gc.automatic then "true" else "false"}" != "true" ]]; then
