@@ -422,7 +422,30 @@ let
   };
   cfgPowerTuning = evalPowerTuning.config;
 
-  # 13. 系统自动更新定时器启用模式
+  # 13. 系统升级完全禁用模式 (upgrade.enable = false)
+  evalUpgradeDisabled = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          update = {
+            enable = true;
+            upgrade.enable = false;
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgUpgradeDisabled = evalUpgradeDisabled.config;
+
+  # 14. 系统自动更新定时器启用模式 (upgrade.enable = true, upgrade.timer.enable = true)
   evalScheduledUpgrade = import (pkgs.path + "/nixos/lib/eval-config.nix") {
     modules = [
       { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
@@ -432,7 +455,10 @@ let
           enable = true;
           update = {
             enable = true;
-            upgrade.enable = true;
+            upgrade = {
+              enable = true;
+              timer.enable = true;
+            };
           };
         };
         boot.loader.grub.enable = false;
@@ -533,22 +559,40 @@ pkgs.runCommand "static-check" { } ''
   fi
 
   # 7. 验证更新子系统
+  # 7.1 默认模式：upgrade.enable = true, upgrade.timer.enable = false
   if [[ "${if cfg.systemd.services ? base-upgrade then "true" else "false"}" != "true" ]]; then
-    echo "错误: update.enable 启用后应始终定义 base-upgrade.service"
+    echo "错误: upgrade.enable = true (默认) 时应定义 base-upgrade.service"
     exit 1
   fi
   if [[ "${if cfg.systemd.timers ? base-upgrade then "true" else "false"}" != "false" ]]; then
-    echo "错误: upgrade.enable = false 时不应激活 base-upgrade.timer"
-    exit 1
-  fi
-  if [[ "${if cfgScheduledUpgrade.systemd.timers ? base-upgrade then "true" else "false"}" != "true" ]]; then
-    echo "错误: upgrade.enable = true 时应激活 base-upgrade.timer"
+    echo "错误: upgrade.timer.enable = false (默认) 时不应激活 base-upgrade.timer"
     exit 1
   fi
   if [[ "${if builtins.any (p: p.name == "dot-update-cli" || (p.pname or "") == "dot-update-cli") cfg.environment.systemPackages then "true" else "false"}" != "true" ]]; then
-    echo "错误: update.enable 启用后应向 systemPackages 注入 dot-update CLI 命令"
+    echo "错误: upgrade.enable = true 时应向 systemPackages 注入 dot-update CLI 命令"
     exit 1
   fi
+
+  # 7.2 upgrade.enable = false 模式：完全关闭服务并移除命令行工具
+  if [[ "${if cfgUpgradeDisabled.systemd.services ? base-upgrade then "true" else "false"}" != "false" ]]; then
+    echo "错误: upgrade.enable = false 时应完全关闭 base-upgrade.service"
+    exit 1
+  fi
+  if [[ "${if cfgUpgradeDisabled.systemd.timers ? base-upgrade then "true" else "false"}" != "false" ]]; then
+    echo "错误: upgrade.enable = false 时不应存在 base-upgrade.timer"
+    exit 1
+  fi
+  if [[ "${if builtins.any (p: p.name == "dot-update-cli" || (p.pname or "") == "dot-update-cli") cfgUpgradeDisabled.environment.systemPackages then "true" else "false"}" != "false" ]]; then
+    echo "错误: upgrade.enable = false 时应从 systemPackages 中移除 CLI 命令"
+    exit 1
+  fi
+
+  # 7.3 upgrade.timer.enable = true 模式：独立激活定时器
+  if [[ "${if cfgScheduledUpgrade.systemd.timers ? base-upgrade then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.timer.enable = true 时应激活 base-upgrade.timer"
+    exit 1
+  fi
+
   if [[ "${if cfg.nix.gc.automatic then "true" else "false"}" != "true" ]]; then
     echo "错误: 应启用自动垃圾回收"
     exit 1

@@ -325,11 +325,10 @@ in {
     upgrade = {
       enable = mkOption {
         type = types.bool;
-        default = false;
+        default = true;
         description = ''
-          Whether to enable scheduled periodic automatic upgrades (Systemd Timer).
-          NOTE: This only controls the periodic timer. The manual CLI command and 
-          the base-upgrade.service are ALWAYS enabled when base.update.enable is true.
+          Whether to enable system upgrade capabilities (CLI update command and systemd service).
+          When set to false, the base-upgrade service is completely disabled and CLI update commands are removed from PATH.
         '';
       };
 
@@ -363,22 +362,33 @@ in {
         description = "Extra arguments passed directly to nixos-rebuild.";
       };
 
-      dates = mkOption {
-        type = types.str;
-        default = "04:00";
-        description = "Schedule for automatic upgrades (systemd OnCalendar format).";
-      };
-
-      randomizedDelaySec = mkOption {
-        type = types.str;
-        default = "1h";
-        description = "Random delay for scheduled automatic upgrades to prevent thundering herd.";
-      };
-
       allowReboot = mkOption {
         type = types.bool;
         default = false;
         description = "Whether to automatically reboot if the kernel has changed after upgrade.";
+      };
+
+      timer = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Whether to enable scheduled periodic automatic upgrades (Systemd Timer).
+            When false, automatic periodic execution is disabled, but manual execution via CLI or systemd service remains available as long as upgrade.enable is true.
+          '';
+        };
+
+        dates = mkOption {
+          type = types.str;
+          default = "04:00";
+          description = "Schedule for automatic upgrades (systemd OnCalendar format).";
+        };
+
+        randomizedDelaySec = mkOption {
+          type = types.str;
+          default = "1h";
+          description = "Random delay for scheduled automatic upgrades to prevent thundering herd.";
+        };
       };
     };
 
@@ -386,7 +396,7 @@ in {
       enable = mkOption {
         type = types.bool;
         default = true;
-        description = "Whether to install the manual update CLI command in system PATH.";
+        description = "Whether to install the manual update CLI command in system PATH (requires upgrade.enable = true).";
       };
 
       name = mkOption {
@@ -422,8 +432,8 @@ in {
   };
 
   config = mkIf (cfg.enable && !config.base.testMode) {
-    # 1. 向系统 PATH 注入 CLI 命令及别名
-    environment.systemPackages = mkIf cfg.command.enable [
+    # 1. 向系统 PATH 注入 CLI 命令及别名（仅当 upgrade.enable 且 command.enable 时注入）
+    environment.systemPackages = mkIf (cfg.upgrade.enable && cfg.command.enable) [
       updateCliPackages
     ];
 
@@ -461,8 +471,8 @@ in {
       };
     };
 
-    # 3. 系统升级 Service (只要启用了 base.update，就始终注册，支持手动触发与 systemctl 调度)
-    systemd.services.base-upgrade = {
+    # 3. 系统升级 Service (仅当 upgrade.enable = true 时注册)
+    systemd.services.base-upgrade = mkIf cfg.upgrade.enable {
       description = "Base NixOS System Upgrade Service";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
@@ -476,13 +486,13 @@ in {
       };
     };
 
-    # 4. 系统升级 Timer (仅当 cfg.upgrade.enable = true 时激活)
-    systemd.timers.base-upgrade = mkIf cfg.upgrade.enable {
+    # 4. 系统升级 Timer (独立子配置项：仅当 upgrade.enable && upgrade.timer.enable 时激活)
+    systemd.timers.base-upgrade = mkIf (cfg.upgrade.enable && cfg.upgrade.timer.enable) {
       description = "Base NixOS Scheduled Automatic Upgrade Timer";
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = cfg.upgrade.dates;
-        RandomizedDelaySec = cfg.upgrade.randomizedDelaySec;
+        OnCalendar = cfg.upgrade.timer.dates;
+        RandomizedDelaySec = cfg.upgrade.timer.randomizedDelaySec;
         Persistent = true;
       };
     };

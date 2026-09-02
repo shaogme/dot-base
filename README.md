@@ -60,9 +60,10 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
   - **`china` 模式**: 国内外分流。国内域名（如百度、阿里、苹果等）走本地解析，其余走加密 DNS。
   - **`unlock` 配置**: 支持自定义解锁服务器与指定域名的分流解析。
 - **`base.update`**: 自动化运维与系统更新子系统。
+  - **`upgrade.enable`**: 系统升级主开关（默认为 `true`）。控制是否启用系统升级能力与服务；若设为 `false`，则**完全关闭升级服务并从系统中移除 CLI 工具**。
+  - **定时更新独立子配置 (`upgrade.timer`)**: `upgrade.timer.enable`（默认为 `false`）仅控制后台 Systemd Timer 定时器。关闭定时器时，CLI 工具与升级服务依然就绪，可随时手动触发单次更新。
   - **单次更新 CLI (`dot-update`)**: 内置系统级维护命令 `dot-update`（支持别名 `base-update` 与 `nixos-update`），一键执行当前系统的构建与切换。
   - **安全可控的 Pull 策略**: 默认**不拉取远程 Git**（仅构建本地工作区修改），方便本地配置调试；通过 `--pull`（或 `-p`）可在更新前自动同步远程最新代码。
-  - **定时任务与服务解耦**: `upgrade.enable` 仅控制是否启用每日定时自动升级（Systemd Timer）。关闭定时器（设为 `false`）**完全不影响**随时运行 `dot-update` 或手动调用升级服务。
   - **Git 仓库同步 (`sync`)**: 支持自动与远程 Git 仓库同步配置。支持 `destructive` 模式（`git reset --hard` 与 `clean`）以确保环境与远端严格一致。
   - **内核感知与自动重启**: 构建完成后自动比对运行中内核与新内核，支持提示或在配置 `allowReboot = true` 时自动重启。
   - **自动垃圾回收 (`gc`)**: 定期清理旧 Generation 并自动优化 Store 存储空间。
@@ -232,11 +233,17 @@ base.update = {
 
   # 2. 系统升级与定时任务
   upgrade = {
-    enable = false;           # 是否开启定时自动升级（设为 false 不影响 dot-update 命令手动执行）
+    enable = true;            # 是否启用升级子系统（设为 false 时完全关闭升级服务并移除 dot-update CLI）
     type = "flake";           # 升级模式：flake 或 legacy
     pullBeforeUpdate = false; # 默认是否在更新前拉取远程（默认 false）
-    dates = "04:00";          # 自动更新触发时间
     allowReboot = true;       # 内核更新后是否允许自动重启
+
+    # 定时自动更新独立子配置
+    timer = {
+      enable = false;         # 是否开启定时自动升级（默认 false，关闭不影响手动运行 dot-update）
+      dates = "04:00";        # 自动更新触发时间
+      randomizedDelaySec = "1h";
+    };
   };
 
   # 3. 垃圾回收
