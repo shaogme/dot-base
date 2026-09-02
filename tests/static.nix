@@ -470,6 +470,40 @@ let
     ];
   };
   cfgScheduledUpgrade = evalScheduledUpgrade.config;
+
+  # 15. 系统更新自定义 command 与 timer 配置模式
+  evalUpgradeCustom = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          update = {
+            enable = true;
+            upgrade = {
+              enable = true;
+              command = {
+                pullBeforeUpdate = true;
+                allowReboot = true;
+              };
+              timer = {
+                enable = true;
+                pullBeforeUpdate = true;
+                allowReboot = true;
+              };
+            };
+          };
+        };
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgUpgradeCustom = evalUpgradeCustom.config;
 in
 pkgs.runCommand "static-check" { } ''
   echo "正在验证基础配置与网络模块测试覆盖..."
@@ -559,7 +593,7 @@ pkgs.runCommand "static-check" { } ''
   fi
 
   # 7. 验证更新子系统
-  # 7.1 默认模式：upgrade.enable = true, upgrade.timer.enable = false
+  # 7.1 默认模式：upgrade.enable = true, upgrade.timer.enable = false, 默认 command 与 timer 配置独立
   if [[ "${if cfg.systemd.services ? base-upgrade then "true" else "false"}" != "true" ]]; then
     echo "错误: upgrade.enable = true (默认) 时应定义 base-upgrade.service"
     exit 1
@@ -570,6 +604,22 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${if builtins.any (p: p.name == "dot-update-cli" || (p.pname or "") == "dot-update-cli") cfg.environment.systemPackages then "true" else "false"}" != "true" ]]; then
     echo "错误: upgrade.enable = true 时应向 systemPackages 注入 dot-update CLI 命令"
+    exit 1
+  fi
+  if [[ "${if cfg.base.update.upgrade.command.pullBeforeUpdate == false then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.command.pullBeforeUpdate 默认应为 false"
+    exit 1
+  fi
+  if [[ "${if cfg.base.update.upgrade.command.allowReboot == false then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.command.allowReboot 默认应为 false"
+    exit 1
+  fi
+  if [[ "${if cfg.base.update.upgrade.timer.pullBeforeUpdate == false then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.timer.pullBeforeUpdate 默认应为 false"
+    exit 1
+  fi
+  if [[ "${if cfg.base.update.upgrade.timer.allowReboot == false then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.timer.allowReboot 默认应为 false"
     exit 1
   fi
 
@@ -590,6 +640,24 @@ pkgs.runCommand "static-check" { } ''
   # 7.3 upgrade.timer.enable = true 模式：独立激活定时器
   if [[ "${if cfgScheduledUpgrade.systemd.timers ? base-upgrade then "true" else "false"}" != "true" ]]; then
     echo "错误: upgrade.timer.enable = true 时应激活 base-upgrade.timer"
+    exit 1
+  fi
+
+  # 7.4 自定义 command 与 timer 配置独立性验证
+  if [[ "${if cfgUpgradeCustom.base.update.upgrade.command.pullBeforeUpdate == true then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.command.pullBeforeUpdate 自定义值未生效"
+    exit 1
+  fi
+  if [[ "${if cfgUpgradeCustom.base.update.upgrade.command.allowReboot == true then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.command.allowReboot 自定义值未生效"
+    exit 1
+  fi
+  if [[ "${if cfgUpgradeCustom.base.update.upgrade.timer.pullBeforeUpdate == true then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.timer.pullBeforeUpdate 自定义值未生效"
+    exit 1
+  fi
+  if [[ "${if cfgUpgradeCustom.base.update.upgrade.timer.allowReboot == true then "true" else "false"}" != "true" ]]; then
+    echo "错误: upgrade.timer.allowReboot 自定义值未生效"
     exit 1
   fi
 

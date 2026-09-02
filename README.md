@@ -65,7 +65,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
   - **单次更新 CLI (`dot-update`)**: 内置系统级维护命令 `dot-update`（支持别名 `base-update` 与 `nixos-update`），一键执行当前系统的构建与切换。
   - **安全可控的 Pull 策略**: 默认**不拉取远程 Git**（仅构建本地工作区修改），方便本地配置调试；通过 `--pull`（或 `-p`）可在更新前自动同步远程最新代码。
   - **Git 仓库同步 (`sync`)**: 支持自动与远程 Git 仓库同步配置。支持 `destructive` 模式（`git reset --hard` 与 `clean`）以确保环境与远端严格一致。
-  - **内核感知与自动重启**: 构建完成后自动比对运行中内核与新内核，支持提示或在配置 `allowReboot = true` 时自动重启。
+  - **内核感知与自动重启**: 构建完成后自动比对运行中内核与新内核，支持提示或在配置 `upgrade.command.allowReboot = true` / `upgrade.timer.allowReboot = true` 时自动重启。
   - **自动垃圾回收 (`gc`)**: 定期清理旧 Generation 并自动优化 Store 存储空间。
   - **Flake 宿主推断 (`host` / `path`)**: 自动推断 Flake URI 与 Legacy 配置文件路径。
 - **`base.container`**: 容器后端配置。
@@ -235,14 +235,21 @@ base.update = {
   upgrade = {
     enable = true;            # 是否启用升级子系统（设为 false 时完全关闭升级服务并移除 dot-update CLI）
     type = "flake";           # 升级模式：flake 或 legacy
-    pullBeforeUpdate = false; # 默认是否在更新前拉取远程（默认 false）
-    allowReboot = true;       # 内核更新后是否允许自动重启
 
     # 定时自动更新独立子配置
     timer = {
       enable = false;         # 是否开启定时自动升级（默认 false，关闭不影响手动运行 dot-update）
       dates = "04:00";        # 自动更新触发时间
       randomizedDelaySec = "1h";
+      pullBeforeUpdate = false; # 定时更新前是否拉取远程（默认 false）
+      allowReboot = false;      # 定时更新后内核变更是否自动重启（默认 false）
+    };
+
+    # 手动升级命令行配置
+    command = {
+      enable = true;          # 是否向 PATH 注入 dot-update 命令行工具
+      pullBeforeUpdate = false; # 命令行更新前默认是否拉取远程（可用 -p/--pull 覆写）
+      allowReboot = true;       # 命令行更新后若内核变更是否自动重启（可用 -r/--reboot 或 --no-reboot 覆写）
     };
   };
 

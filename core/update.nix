@@ -20,7 +20,7 @@ let
   nixpkgsPath = builtins.path { name = "nixpkgs"; path = pkgs.path; };
 
   # 2. 生成核心更新执行脚本
-  updateScript = pkgs.writeShellScriptBin cfg.command.name ''
+  updateScript = pkgs.writeShellScriptBin cfg.upgrade.command.name ''
     set -euo pipefail
 
     # ANSI Colors
@@ -38,7 +38,11 @@ let
     log_error() { echo -e "''${RED}==> ERROR:''${NC} $*" >&2; }
 
     # 默认配置（由 Nix 模块定义）
-    DEFAULT_DO_PULL="${if cfg.upgrade.pullBeforeUpdate then "1" else "0"}"
+    COMMAND_DO_PULL="${if cfg.upgrade.command.pullBeforeUpdate then "1" else "0"}"
+    COMMAND_ALLOW_REBOOT="${if cfg.upgrade.command.allowReboot then "1" else "0"}"
+    TIMER_DO_PULL="${if cfg.upgrade.timer.pullBeforeUpdate then "1" else "0"}"
+    TIMER_ALLOW_REBOOT="${if cfg.upgrade.timer.allowReboot then "1" else "0"}"
+
     SYNC_ENABLED="${if cfg.sync.enable then "1" else "0"}"
     SYNC_URL="${cfg.sync.url}"
     SYNC_BRANCH="${cfg.sync.branch}"
@@ -49,8 +53,10 @@ let
     LEGACY_CONFIG="${legacyConfigPath}"
     NIXPKGS_PATH="${nixpkgsPath}"
     DEFAULT_ACTION="${cfg.upgrade.action}"
-    DEFAULT_ALLOW_REBOOT="${if cfg.upgrade.allowReboot then "1" else "0"}"
     EXTRA_FLAGS=(${lib.escapeShellArgs cfg.upgrade.extraFlags})
+
+    DEFAULT_DO_PULL="$COMMAND_DO_PULL"
+    DEFAULT_ALLOW_REBOOT="$COMMAND_ALLOW_REBOOT"
 
     DO_PULL="$DEFAULT_DO_PULL"
     ACTION="$DEFAULT_ACTION"
@@ -60,13 +66,13 @@ let
 
     show_help() {
       cat <<EOF
-Usage: ${cfg.command.name} [OPTIONS]
+Usage: ${cfg.upgrade.command.name} [OPTIONS]
 
 NixOS System Upgrade & Maintenance Utility (${cfg.upgrade.type} mode)
 
 Options:
   -p, --pull          Pull/sync remote git repository before rebuilding
-  -n, --no-pull       Do NOT pull git repository (build local changes directly) [DEFAULT]
+  -n, --no-pull       Do NOT pull git repository (build local changes directly)
   -s, --sync-only     Only perform git synchronization, do not rebuild system
   -a, --action <ACT>  Set rebuild action: switch, boot, test, build, dry-activate (Default: $DEFAULT_ACTION)
   -b, --boot          Shortcut for --action boot
@@ -136,7 +142,9 @@ EOF
           shift
           ;;
         --service-mode)
-          # 内部由 systemd service 调用的模式
+          # 内部由 systemd service 调用的模式，采用 timer 配置的默认值
+          DO_PULL="$TIMER_DO_PULL"
+          ALLOW_REBOOT="$TIMER_ALLOW_REBOOT"
           shift
           ;;
         -h|--help)
@@ -260,10 +268,10 @@ EOF
   # 3. 注入别名软件包
   updateCliPackages = pkgs.runCommand "dot-update-cli" { } ''
     mkdir -p $out/bin
-    cp ${updateScript}/bin/${cfg.command.name} $out/bin/${cfg.command.name}
+    cp ${updateScript}/bin/${cfg.upgrade.command.name} $out/bin/${cfg.upgrade.command.name}
     ${concatMapStringsSep "\n" (alias: ''
-      ln -sf $out/bin/${cfg.command.name} $out/bin/${alias}
-    '') cfg.command.aliases}
+      ln -sf $out/bin/${cfg.upgrade.command.name} $out/bin/${alias}
+    '') cfg.upgrade.command.aliases}
   '';
 
 in {
@@ -344,12 +352,6 @@ in {
         description = "Default rebuild action performed during upgrade.";
       };
 
-      pullBeforeUpdate = mkOption {
-        type = types.bool;
-        default = false;
-        description = "Whether to pull/sync Git repository before executing upgrade by default. Defaults to false.";
-      };
-
       flakeUri = mkOption {
         type = types.str;
         default = "";
@@ -360,12 +362,6 @@ in {
         type = types.listOf types.str;
         default = [ ];
         description = "Extra arguments passed directly to nixos-rebuild.";
-      };
-
-      allowReboot = mkOption {
-        type = types.bool;
-        default = false;
-        description = "Whether to automatically reboot if the kernel has changed after upgrade.";
       };
 
       timer = {
@@ -389,26 +385,50 @@ in {
           default = "1h";
           description = "Random delay for scheduled automatic upgrades to prevent thundering herd.";
         };
-      };
-    };
 
-    command = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Whether to install the manual update CLI command in system PATH (requires upgrade.enable = true).";
-      };
+        pullBeforeUpdate = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether to pull/sync Git repository before executing scheduled automatic upgrade.";
+        };
 
-      name = mkOption {
-        type = types.str;
-        default = "dot-update";
-        description = "Primary binary name for the update CLI utility.";
+        allowReboot = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether to automatically reboot if the kernel has changed after scheduled automatic upgrade.";
+        };
       };
 
-      aliases = mkOption {
-        type = types.listOf types.str;
-        default = [ "base-update" "nixos-update" ];
-        description = "Symlink aliases created in PATH for the update CLI utility.";
+      command = {
+        enable = mkOption {
+          type = types.bool;
+          default = true;
+          description = "Whether to install the manual update CLI command in system PATH (requires upgrade.enable = true).";
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = "dot-update";
+          description = "Primary binary name for the update CLI utility.";
+        };
+
+        aliases = mkOption {
+          type = types.listOf types.str;
+          default = [ "base-update" "nixos-update" ];
+          description = "Symlink aliases created in PATH for the update CLI utility.";
+        };
+
+        pullBeforeUpdate = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether the manual update CLI command should pull/sync Git repository before executing upgrade by default.";
+        };
+
+        allowReboot = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether the manual update CLI command should automatically reboot if the kernel has changed after upgrade by default.";
+        };
       };
     };
 
@@ -432,8 +452,8 @@ in {
   };
 
   config = mkIf (cfg.enable && !config.base.testMode) {
-    # 1. 向系统 PATH 注入 CLI 命令及别名（仅当 upgrade.enable 且 command.enable 时注入）
-    environment.systemPackages = mkIf (cfg.upgrade.enable && cfg.command.enable) [
+    # 1. 向系统 PATH 注入 CLI 命令及别名（仅当 upgrade.enable 且 upgrade.command.enable 时注入）
+    environment.systemPackages = mkIf (cfg.upgrade.enable && cfg.upgrade.command.enable) [
       updateCliPackages
     ];
 
@@ -480,7 +500,7 @@ in {
       serviceConfig = {
         Type = "oneshot";
         User = "root";
-        ExecStart = "${updateScript}/bin/${cfg.command.name} --service-mode";
+        ExecStart = "${updateScript}/bin/${cfg.upgrade.command.name} --service-mode";
         StandardOutput = "journal+console";
         StandardError = "journal+console";
       };
