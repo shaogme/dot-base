@@ -60,7 +60,11 @@ pkgs.testers.nixosTest {
     assert "Default Pull:       No" in help_output
     machine.succeed("base-update --help")
     machine.succeed("nixos-update --help")
-    machine.succeed("systemctl status base-upgrade.service")
+    service_cat = machine.succeed("systemctl cat base-upgrade.service")
+    assert "ExecStart=" in service_cat
+    assert "dot-update --service-mode" in service_cat
+    _, status_output = machine.execute("systemctl status base-upgrade.service")
+    assert "Loaded: loaded" in status_output
+    assert "Active: inactive (dead)" in status_output
   '';
 }
-
