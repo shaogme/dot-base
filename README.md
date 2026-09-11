@@ -51,10 +51,13 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
   - **`root.mode`**: 默认为 `default`（仅允许密钥登录），可选 `permit_passwd`。
   - 支持配置初始 Hashed 密码与 `authorizedKeys`。
   - 内置安全加固，自动禁用空密码并根据模式调整 SSHD 配置。
-- **`base.memory`**: 智能内存优化。所有模式均启用 **Zram (zstd)** 与 **MGLRU**。
-  - **`aggressive`**: 针对 <1G 内存。100% Zram 占用，激进的 Swap 策略，限制 Nix 构建任务数为 1。
-  - **`balanced`**: 针对 <2G 内存。80% Zram，中等 Swap 策略，优化脏数据刷盘阈值。
-  - **`conservative`**: 针对 >=4G 内存。50% Zram，保持标准系统压力。
+- **`base.memory`**: 智能内存优化。支持 **Zram**（无 Swap 虚拟块设备）与 **Zswap**（物理 Swap 内存写入缓存）双引擎，所有模式均启用 **MGLRU**。
+  - **`type`**: 压缩换页机制，可选 `auto`（默认，检测到物理 Swap 时启用 `zswap`，否则启用 `zram`）、`zswap`、`zram`、`none`。
+  - **`mode`**: 调优档位，包含：
+    - **`aggressive`**: 针对 <1G 内存。限制 Nix 并发任务数为 1，激进换页策略（Zram 100% / Zswap 40%）。
+    - **`balanced`**: 针对 <2G 内存。中等换页策略（Zram 80% / Zswap 30%），优化脏数据刷盘阈值。
+    - **`conservative`**: 针对 >=4G 内存。标准系统压力（Zram 50% / Zswap 20%）。
+  - 支持通过 `base.memory.zram.*` 与 `base.memory.zswap.*` 对压缩算法、内存上限等进行独立精细微调。
 - **`base.dns.smartdns`**: 高性能 DNS 转发。支持持久化缓存、域名预取及过期服务。
   - **`oversea` 模式**: 针对海外 VPS。使用主流公共 DNS Over TLS (DoT) 以确保安全。
   - **`china` 模式**: 国内外分流。国内域名（如百度、阿里、苹果等）走本地解析，其余走加密 DNS。

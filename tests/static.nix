@@ -504,6 +504,32 @@ let
     ];
   };
   cfgUpgradeCustom = evalUpgradeCustom.config;
+
+  # 16. 内存优化 Zswap 模式评估 (物理 Swap 存在时)
+  evalMemoryZswap = import (pkgs.path + "/nixos/lib/eval-config.nix") {
+    modules = [
+      { nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system; }
+      library.nixosModules.default
+      {
+        base = {
+          enable = true;
+          memory = {
+            type = "zswap";
+            mode = "aggressive";
+          };
+        };
+        swapDevices = [
+          { device = "/dev/dummy-swap"; }
+        ];
+        boot.loader.grub.enable = false;
+        fileSystems."/" = {
+          device = "/dev/dummy";
+          fsType = "ext4";
+        };
+      }
+    ];
+  };
+  cfgMemoryZswap = evalMemoryZswap.config;
 in
 pkgs.runCommand "static-check" { } ''
   echo "正在验证基础配置与网络模块测试覆盖..."
@@ -524,9 +550,10 @@ pkgs.runCommand "static-check" { } ''
     exit 1
   fi
 
-  # 3. 验证内存优化 (Aggressive 模式)
+  # 3. 验证内存优化
+  # 3.1 Zram 模式 (无物理 Swap 时 auto -> zram)
   if [[ "${if cfg.zramSwap.enable then "true" else "false"}" != "true" ]]; then
-    echo "错误: Aggressive 模式应启用 zramSwap"
+    echo "错误: Aggressive 模式在无物理 Swap 时应启用 zramSwap"
     exit 1
   fi
   if [[ "${toString cfg.zramSwap.memoryPercent}" != "100" ]]; then
@@ -535,6 +562,28 @@ pkgs.runCommand "static-check" { } ''
   fi
   if [[ "${toString cfg.nix.settings.cores}" != "1" ]]; then
     echo "错误: Aggressive 模式 nix.settings.cores 应为 1"
+    exit 1
+  fi
+  if [[ "${if cfg.boot.zswap.enable then "true" else "false"}" != "false" ]]; then
+    echo "错误: Zram 模式下 boot.zswap 绝不能启用"
+    exit 1
+  fi
+
+  # 3.2 Zswap 模式 (有物理 Swap)
+  if [[ "${if cfgMemoryZswap.boot.zswap.enable then "true" else "false"}" != "true" ]]; then
+    echo "错误: Zswap 模式应启用 boot.zswap"
+    exit 1
+  fi
+  if [[ "${toString cfgMemoryZswap.boot.zswap.maxPoolPercent}" != "40" ]]; then
+    echo "错误: Aggressive 模式下 Zswap maxPoolPercent 应为 40"
+    exit 1
+  fi
+  if [[ "${cfgMemoryZswap.boot.zswap.compressor}" != "zstd" ]]; then
+    echo "错误: Zswap 压缩算法应为 zstd"
+    exit 1
+  fi
+  if [[ "${if cfgMemoryZswap.zramSwap.enable then "true" else "false"}" != "false" ]]; then
+    echo "错误: Zswap 模式下 zramSwap 绝不能启用"
     exit 1
   fi
 
