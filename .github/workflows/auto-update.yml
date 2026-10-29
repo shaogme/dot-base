@@ -29,8 +29,8 @@ jobs:
         run: nix-env -f '<nixpkgs>' -iA npins
 
       - name: Update npins
+        working-directory: dot-base
         run: |
-          cd tests
           npins upgrade
           npins update
 

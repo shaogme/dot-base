@@ -1,9 +1,12 @@
 { pkgs ? null, lib ? null, ... } @ args:
 let
+  sources = import ./npins;
+  resolvedPkgs =
+    if pkgs != null then pkgs
+    else import (sources.nixpkgs { }) { };
   resolvedLib =
     if lib != null then lib
-    else if pkgs != null && pkgs ? lib then pkgs.lib
-    else (import <nixpkgs> { }).lib;
+    else resolvedPkgs.lib;
 
   container = import ./core/container-lib.nix { lib = resolvedLib; };
   proxy = import ./core/proxy-lib.nix { lib = resolvedLib; };

@@ -17,7 +17,6 @@ let
       "";
 
   legacyConfigPath = "${syncTarget}${configSubpath}/configuration.nix";
-  nixpkgsPath = builtins.path { name = "nixpkgs"; path = pkgs.path; };
 
   # 2. 生成核心更新执行脚本
   updateScript = pkgs.writeShellScriptBin cfg.upgrade.command.name ''
@@ -51,7 +50,6 @@ let
     UPGRADE_TYPE="${cfg.upgrade.type}"
     FLAKE_URI="${inferredFlakeUri}"
     LEGACY_CONFIG="${legacyConfigPath}"
-    NIXPKGS_PATH="${nixpkgsPath}"
     DEFAULT_ACTION="${cfg.upgrade.action}"
     EXTRA_FLAGS=(${lib.escapeShellArgs cfg.upgrade.extraFlags})
 
@@ -238,7 +236,6 @@ EOF
       log_info "Target Legacy Config: $LEGACY_CONFIG"
       ${pkgs.nixos-rebuild}/bin/nixos-rebuild "$ACTION" \
         -I "nixos-config=$LEGACY_CONFIG" \
-        -I "nixpkgs=$NIXPKGS_PATH" \
         "''${EXTRA_FLAGS[@]}"
     else
       log_error "Unknown upgrade type: $UPGRADE_TYPE"

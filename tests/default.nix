@@ -1,7 +1,7 @@
 { ... }:
 let
   # 导入 npins 锁定的源
-  sources = import ./npins;
+  sources = import ../npins;
 
   # 强制使用锁定的 nixpkgs 版本
   pkgs = import sources.nixpkgs { };

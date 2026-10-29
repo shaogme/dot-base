@@ -17,6 +17,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 .
 ├── flake.nix             # 项目入口，定义 Flake 输出
 ├── default.nix           # 模块总入口
+├── npins/                # npins 依赖与锁定文件
 ├── core/                 # 核心系统配置
 │   ├── auth.nix          # SSH 安全与用户认证
 │   ├── container.nix     # Docker/Podman 容器后端
@@ -71,6 +72,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
   - **内核感知与自动重启**: 构建完成后自动比对运行中内核与新内核，支持提示或在配置 `upgrade.command.allowReboot = true` / `upgrade.timer.allowReboot = true` 时自动重启。
   - **自动垃圾回收 (`gc`)**: 定期清理旧 Generation 并自动优化 Store 存储空间。
   - **Flake 宿主推断 (`host` / `path`)**: 自动推断 Flake URI 与 Legacy 配置文件路径。
+  - **Legacy nixpkgs 解析**: `dot-update` 的 legacy 重建只显式指定主机配置文件，不传入 `-I nixpkgs`；nixpkgs 按 `nixos-rebuild` 的默认搜索路径解析。
 - **`base.container`**: 容器后端配置。
   - **`docker`**: 支持 Rootless 模式、实验性功能，并优化了桥接网络转发性能。
   - **`podman`**: 提供 Docker 兼容模式，并预装 `podman-compose`。
@@ -313,6 +315,9 @@ in
 
 > [!TIP]
 > 大多数普通用户只需遵循“快速开始”中的标准 Flake 用法即可，`nixosSystem` 会自动确保版本一致性。
+>
+> 非 Flake 使用或需要在本地调试 nixpkgs 时，可通过 `NPINS_OVERRIDE_nixpkgs` 覆盖仓库锁定版本：
+> `NPINS_OVERRIDE_nixpkgs=/path/to/nixpkgs nix-build ...`。代码调用 `import ./default.nix { pkgs = ...; }` 时，显式传入的 `pkgs` 优先于此默认 pin。
 
 ## 安全建议
 
