@@ -4,8 +4,8 @@
       "type": "Channel",
       "name": "nixos-unstable",
       "artifact": "nixexprs.tar.xz",
-      "url": "https://releases.nixos.org/nixos/unstable/nixos-26.11pre1103272.31ecbaca1bde/nixexprs.tar.xz",
-      "hash": "sha256-yXRSdZdZZqccEL+j11lc1gFG1f7V5j8N7oPBTHwf7n4="
+      "url": "https://releases.nixos.org/nixos/unstable/nixos-26.11pre1105037.1c89083e451e/nixexprs.tar.xz",
+      "hash": "sha256-LOv16TsMYV2/8BUYnhSxHkOASe7es2ORbqMeLlZJ8Hc="
     }
   },
   "version": 8
