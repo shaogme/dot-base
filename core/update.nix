@@ -7,6 +7,7 @@ let
   syncTarget = cfg.sync.targetPath;
   configSubpath = if cfg.path != "" then "/${cfg.path}" else "";
   hostSuffix = if cfg.host != "" then "#${cfg.host}" else "";
+  nixpkgsPath = if cfg.upgrade.nixpkgsPath != null then cfg.upgrade.nixpkgsPath else "";
 
   inferredFlakeUri =
     if cfg.upgrade.flakeUri != "" then
@@ -48,6 +49,7 @@ let
     SYNC_TARGET="${cfg.sync.targetPath}"
     SYNC_DESTRUCTIVE="${if cfg.sync.destructive then "1" else "0"}"
     UPGRADE_TYPE="${cfg.upgrade.type}"
+    NIXPKGS_PATH=${escapeShellArg nixpkgsPath}
     FLAKE_URI="${inferredFlakeUri}"
     LEGACY_CONFIG="${legacyConfigPath}"
     DEFAULT_ACTION="${cfg.upgrade.action}"
@@ -233,10 +235,15 @@ EOF
       log_info "Target Flake URI: $FLAKE_URI"
       ${pkgs.nixos-rebuild}/bin/nixos-rebuild "$ACTION" --flake "$FLAKE_URI" "''${EXTRA_FLAGS[@]}"
     elif [ "$UPGRADE_TYPE" = "legacy" ]; then
+      if [ -z "$NIXPKGS_PATH" ]; then
+        log_error "Legacy upgrades require base.update.upgrade.nixpkgsPath to be explicitly configured."
+        exit 1
+      fi
       log_info "Target Legacy Config: $LEGACY_CONFIG"
       ${pkgs.nixos-rebuild}/bin/nixos-rebuild "$ACTION" \
         -I "nixos-config=$LEGACY_CONFIG" \
-        "''${EXTRA_FLAGS[@]}"
+        "''${EXTRA_FLAGS[@]}" \
+        -I "nixpkgs=$NIXPKGS_PATH"
     else
       log_error "Unknown upgrade type: $UPGRADE_TYPE"
       exit 1
@@ -341,6 +348,12 @@ in {
         type = types.enum [ "flake" "legacy" ];
         default = "flake";
         description = "Upgrade mode: 'flake' uses Nix Flakes, 'legacy' uses legacy NixOS channels/NIX_PATH.";
+      };
+
+      nixpkgsPath = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Explicit nixpkgs source path passed to nixos-rebuild in legacy mode.";
       };
 
       action = mkOption {
@@ -449,6 +462,13 @@ in {
   };
 
   config = mkIf (cfg.enable && !config.base.testMode) {
+    assertions = [
+      {
+        assertion = !cfg.upgrade.enable || cfg.upgrade.type != "legacy" || (cfg.upgrade.nixpkgsPath != null && cfg.upgrade.nixpkgsPath != "");
+        message = "base.update.upgrade.nixpkgsPath must be explicitly set when legacy upgrades are enabled.";
+      }
+    ];
+
     # 1. 向系统 PATH 注入 CLI 命令及别名（仅当 upgrade.enable 且 upgrade.command.enable 时注入）
     environment.systemPackages = mkIf (cfg.upgrade.enable && cfg.upgrade.command.enable) [
       updateCliPackages

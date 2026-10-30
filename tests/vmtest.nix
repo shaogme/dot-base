@@ -3,7 +3,10 @@ pkgs.testers.nixosTest {
   name = "library-runtime-test";
   
   nodes.machine = { config, pkgs, ... }: {
-    imports = [ library.nixosModules.default ];
+    imports = [
+      library.nixosModules.default
+      library.nixosModules.kernel-xanmod
+    ];
     
     base = {
       enable = true;
@@ -29,32 +32,37 @@ pkgs.testers.nixosTest {
     
     # 3. 检查基本工具 (git)
     machine.succeed("git --version")
+
+    # 4. Verify the independently pinned XanMod kernel booted successfully
+    uname_r = machine.succeed("uname -r").strip()
+    print(f"Running kernel: {uname_r}")
+    assert "xanmod1" in uname_r
     
-    # 4. 检查内存优化 (zram)
+    # 5. 检查内存优化 (zram)
     machine.succeed("zramctl")
     machine.succeed("swapon --show | grep zram")
     
-    # 5. 检查 SmartDNS
+    # 6. 检查 SmartDNS
     machine.wait_for_unit("smartdns.service")
     machine.succeed("systemctl is-active smartdns")
     machine.succeed("nc -z -u 127.0.0.1 53") # 检查 DNS 端口
     
-    # 6. 检查 Podman 容器服务
+    # 7. 检查 Podman 容器服务
     machine.succeed("podman --version")
     machine.succeed("podman info")
     
-    # 7. 检查性能调优 (Tuned)
+    # 8. 检查性能调优 (Tuned)
     machine.wait_for_unit("tuned.service")
     machine.succeed("systemctl is-active tuned")
     
-    # 8. 检查防火墙 (nftables)
+    # 9. 检查防火墙 (nftables)
     machine.succeed("nft list ruleset")
     
-    # 9. 检查时区
+    # 10. 检查时区
     output = machine.succeed("date +%Z")
     assert "CST" in output or "UTC" in output
 
-    # 10. 检查更新子系统 (CLI 工具与升级服务)
+    # 11. 检查更新子系统 (CLI 工具与升级服务)
     help_output = machine.succeed("dot-update --help")
     assert "Usage: dot-update" in help_output
     assert "Default Pull:       No" in help_output

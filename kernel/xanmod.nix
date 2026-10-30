@@ -2,6 +2,10 @@
 with lib;
 let
   cfg = config.base.kernel.xanmod;
+  sources = import ./xanmod/npins;
+  xanmodPkgs = import sources.nixpkgs {
+    system = pkgs.stdenv.hostPlatform.system;
+  };
 in {
   options.base.kernel.xanmod = {
     enable = mkOption {
@@ -12,7 +16,8 @@ in {
   };
 
   config = mkIf cfg.enable {
-    boot.kernelPackages = pkgs.linuxKernel.packages.linux_xanmod_latest;
+    # Keep the XanMod kernel version independent from the host's nixpkgs pin.
+    boot.kernelPackages = xanmodPkgs.linuxKernel.packages.linux_xanmod_latest;
 
     # 确保加载 BBR 模块
     boot.kernelModules = [ "tcp_bbr" ];

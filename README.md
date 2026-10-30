@@ -34,7 +34,8 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 │   ├── network/          # 单网卡/多网卡与静态 IP 配置
 │   └── default.nix
 └── kernel/               # 内核选择
-    └── xanmod.nix        # XanMod 内核与 BBRv3 调优
+    ├── xanmod.nix        # XanMod 内核与 BBRv3 调优
+    └── xanmod/npins/     # 独立锁定 XanMod 使用的 nixos-unstable nixpkgs
 ```
 
 ## 模块详解
@@ -72,7 +73,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
   - **内核感知与自动重启**: 构建完成后自动比对运行中内核与新内核，支持提示或在配置 `upgrade.command.allowReboot = true` / `upgrade.timer.allowReboot = true` 时自动重启。
   - **自动垃圾回收 (`gc`)**: 定期清理旧 Generation 并自动优化 Store 存储空间。
   - **Flake 宿主推断 (`host` / `path`)**: 自动推断 Flake URI 与 Legacy 配置文件路径。
-  - **Legacy nixpkgs 解析**: `dot-update` 的 legacy 重建只显式指定主机配置文件，不传入 `-I nixpkgs`；nixpkgs 按 `nixos-rebuild` 的默认搜索路径解析。
+  - **显式 Legacy nixpkgs**: legacy 更新必须配置 `base.update.upgrade.nixpkgsPath`。`dot-update` 会将该路径作为 `-I nixpkgs` 传给 `nixos-rebuild`，避免沿用当前系统代际的 nixpkgs。
 - **`base.container`**: 容器后端配置。
   - **`docker`**: 支持 Rootless 模式、实验性功能，并优化了桥接网络转发性能。
   - **`podman`**: 提供 Docker 兼容模式，并预装 `podman-compose`。
@@ -93,7 +94,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 
 ### 2. 内核调优 (`kernel`)
 
-- **`base.kernel.xanmod`**: 默认启用。切换至 XanMod 内核，开启 BBRv3，优化 TCP 窗口、缓冲区及文件描述符限制，显著提升网络连接速度与稳定性。
+- **`base.kernel.xanmod`**: 默认启用。切换至由 `kernel/xanmod/npins` 独立锁定的 nixos-unstable XanMod 内核，开启 BBRv3，优化 TCP 窗口、缓冲区及文件描述符限制。
 
 ### 3. 应用服务 (`app`)
 
@@ -126,7 +127,7 @@ Dot Base 是一个基于 NixOS Flake 的模块化、高性能服务器基础配�
 
 ## 快速开始
 
-Dot Base 采用“纯模块库”架构，不强制锁定 `nixpkgs` 版本。这意味着你可以将其无缝集成到任何 NixOS 项目中，并自动使用你项目中指定的 `nixpkgs` 版本。
+Dot Base 的系统配置通常使用调用方提供的 `nixpkgs`，便于集成到不同 NixOS 项目。XanMod 内核是独立锁定的例外：它从 `kernel/xanmod/npins` 加载，以免内核版本随各主机的 nixpkgs pin 漂移。
 
 ### 示例 1: VPS / 服务器环境
 
@@ -240,6 +241,7 @@ base.update = {
   upgrade = {
     enable = true;            # 是否启用升级子系统（设为 false 时完全关闭升级服务并移除 dot-update CLI）
     type = "flake";           # 升级模式：flake 或 legacy
+    # legacy 模式必须显式提供；从 npins 导入时可设为 toString sources.nixpkgs
 
     # 定时自动更新独立子配置
     timer = {

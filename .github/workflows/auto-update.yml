@@ -29,10 +29,9 @@ jobs:
         run: nix-env -f '<nixpkgs>' -iA npins
 
       - name: Update npins
-        working-directory: dot-base
         run: |
-          npins upgrade
-          npins update
+          chmod +x ./update-npins.sh
+          ./update-npins.sh
 
       - name: Update flake.lock
         run: nix flake update --extra-experimental-features "nix-command flakes"
@@ -42,10 +41,10 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.PAT }}
-          commit-message: "chore: update dependencies"
-          title: "chore: update dependencies"
-          body: "This PR updates both npins and flake dependencies automatically via the scheduled workflow."
-          branch: "auto-update-deps"
+          commit-message: "chore: update dot-base npins dependencies"
+          title: "chore: update dot-base npins dependencies"
+          body: "This PR updates dot-base and XanMod npins locks plus flake inputs via the scheduled workflow."
+          branch: "auto-update-npins"
           delete-branch: true
           committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
