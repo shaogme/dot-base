@@ -888,6 +888,14 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: Hysteria systemd 服务未能正确生成"
     exit 1
   fi
+  if [[ "${if builtins.elem "network-online.target" cfg.systemd.services.hysteria-main.wants then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hysteria systemd 服务应依赖 network-online.target"
+    exit 1
+  fi
+  if [[ "${if builtins.elem "network-online.target" cfg.systemd.services.hysteria-main.after then "true" else "false"}" != "true" ]]; then
+    echo "错误: Hysteria systemd 服务应在 network-online.target 之后启动"
+    exit 1
+  fi
 
   # 19. 验证 S-UI 服务配置、容器定义及客户覆盖 auto proxy 规则
   if [[ "${if cfg.virtualisation.oci-containers.containers ? s-ui then "true" else "false"}" != "true" ]]; then
