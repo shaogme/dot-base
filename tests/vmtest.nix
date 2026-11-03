@@ -2,7 +2,15 @@
 pkgs.testers.nixosTest {
   name = "library-runtime-test";
   
-  nodes.machine = { config, pkgs, ... }: {
+  nodes.machine = { config, pkgs, lib, ... }:
+  let
+    baseUpgradeProbe = pkgs.writeShellScript "base-upgrade-probe" ''
+      echo original >> /run/base-upgrade-invocations
+    '';
+    changedBaseUpgradeProbe = pkgs.writeShellScript "base-upgrade-probe-changed" ''
+      echo changed >> /run/base-upgrade-invocations
+    '';
+  in {
     imports = [
       library.nixosModules.default
       library.nixosModules.kernel-xanmod
@@ -17,6 +25,15 @@ pkgs.testers.nixosTest {
       performance.tuning.profile = "vps";
       update.enable = true;
     };
+
+    # Keep the updater service harmless while testing how a live oneshot unit
+    # behaves when switch-to-configuration sees a changed ExecStart.
+    systemd.services.base-upgrade.serviceConfig = {
+      ExecStart = lib.mkOverride 60 "${baseUpgradeProbe}";
+      RemainAfterExit = true;
+    };
+    specialisation.changedBaseUpgrade.configuration.systemd.services.base-upgrade.serviceConfig.ExecStart =
+      lib.mkForce "${changedBaseUpgradeProbe}";
     
     # 虚拟机测试所需的最小硬件配置
     virtualisation.memorySize = 1024; # 增加内存以支持更多服务
@@ -70,9 +87,17 @@ pkgs.testers.nixosTest {
     machine.succeed("nixos-update --help")
     service_cat = machine.succeed("systemctl cat base-upgrade.service")
     assert "ExecStart=" in service_cat
-    assert "dot-update --service-mode" in service_cat
+    assert "base-upgrade-probe" in service_cat
+    assert "X-RestartIfChanged=false" in service_cat
     _, status_output = machine.execute("systemctl status base-upgrade.service")
     assert "Loaded: loaded" in status_output
     assert "Active: inactive (dead)" in status_output
+
+    # A NixOS switch must not restart the updater while it is already running.
+    machine.succeed("systemctl start base-upgrade.service")
+    machine.succeed("test $(wc -l < /run/base-upgrade-invocations) -eq 1")
+    machine.succeed("/run/current-system/specialisation/changedBaseUpgrade/bin/switch-to-configuration test")
+    machine.succeed("test $(wc -l < /run/base-upgrade-invocations) -eq 1")
+    machine.succeed("systemctl stop base-upgrade.service")
   '';
 }

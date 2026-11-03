@@ -647,6 +647,10 @@ pkgs.runCommand "static-check" { } ''
     echo "错误: upgrade.enable = true (默认) 时应定义 base-upgrade.service"
     exit 1
   fi
+  if [[ "${if cfg.systemd.services.base-upgrade.restartIfChanged == false then "true" else "false"}" != "true" ]]; then
+    echo "错误: base-upgrade.service 在 NixOS 切换期间不应因 unit 变化而重启"
+    exit 1
+  fi
   if [[ "${if cfg.systemd.timers ? base-upgrade then "true" else "false"}" != "false" ]]; then
     echo "错误: upgrade.timer.enable = false (默认) 时不应激活 base-upgrade.timer"
     exit 1

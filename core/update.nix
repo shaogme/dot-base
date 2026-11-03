@@ -511,6 +511,10 @@ in {
     # 3. 系统升级 Service (仅当 upgrade.enable = true 时注册)
     systemd.services.base-upgrade = mkIf cfg.upgrade.enable {
       description = "Base NixOS System Upgrade Service";
+      # A switch can change this unit while dot-update itself is performing that
+      # switch. Keep the in-flight updater alive instead of starting it again
+      # from switch-to-configuration.
+      restartIfChanged = false;
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       path = [ pkgs.git pkgs.nixos-rebuild pkgs.nix pkgs.coreutils pkgs.systemd pkgs.flock ];
