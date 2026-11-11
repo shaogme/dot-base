@@ -6,6 +6,17 @@ let
   xanmodPkgs = import sources.nixpkgs {
     system = pkgs.stdenv.hostPlatform.system;
   };
+  xanmodKernelPackages = xanmodPkgs.linuxKernel.packages.linux_xanmod_latest.extend (
+    _final: prev: {
+      kernel = prev.kernel.override (originalArgs: {
+        # Linux 7.3.3 already contains this typedef change, while nixpkgs
+        # still adds the backport patch to its XanMod kernel package.
+        kernelPatches = builtins.filter
+          (patch: patch.name != "tools-add-128-bit-integer-types-for-aarch64")
+          (originalArgs.kernelPatches or [ ]);
+      });
+    }
+  );
 in {
   options.base.kernel.xanmod = {
     enable = mkOption {
@@ -17,7 +28,7 @@ in {
 
   config = mkIf cfg.enable {
     # Keep the XanMod kernel version independent from the host's nixpkgs pin.
-    boot.kernelPackages = xanmodPkgs.linuxKernel.packages.linux_xanmod_latest;
+    boot.kernelPackages = xanmodKernelPackages;
 
     # 确保加载 BBR 模块
     boot.kernelModules = [ "tcp_bbr" ];
